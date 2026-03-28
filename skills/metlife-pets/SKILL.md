@@ -33,9 +33,9 @@ Lists all claims for a given pet and policy. Both `petId` and `policyId` are req
 
 ### 2. Get Claim Details
 ```
-GET {Claims Base}/claim/{petId}/{claimId}
+GET {Claims Base}/claim/{claimSourceId}/{claimId}
 ```
-Gets detailed information about a specific claim.
+Gets detailed information about a specific claim. **Important:** The first path parameter is `claimSourceId` (typically `1`), NOT the `petId`. The `claimSourceId` comes from the claim list response.
 
 ### 3. List Claim Documents
 ```
@@ -43,11 +43,28 @@ GET {Claims Base}/document-details?policyId={policyId}&claimId={claimId}&petId={
 ```
 Lists all documents (EOBs, etc.) associated with a specific claim.
 
-### 4. Download Document
+### 4. Download Document (Submitted Docs: invoices, SOAP notes, etc.)
 ```
-GET {Claims Base}/document-details?policyId={policyId}&claimId={claimId}&petId={petId}&isBlobRequest=true&filePath={filePath}&claimDocumentType={claimDocumentType}
+GET {Claims Base}/document-details?policyId={policyId}&claimId={claimId}&petId={petId}&isBlobRequest=true&filePath={filePath}&claimDocumentType=2
 ```
-Downloads the actual document file (PDF, etc). The `filePath` and `claimDocumentType` values come from the document list response.
+Downloads submitted documents (invoices, SOAP notes, misc files). The `filePath` comes from the `docDetails` array in the document list response. Use `claimDocumentType=2` for submitted documents.
+
+**Important:** The response JSON will contain the file as a base64-encoded string. You must decode it and save it. Example:
+```bash
+# Pipe the API response through jq to extract the base64 data, then decode
+curl -s '...' | python3 -c "import sys,json,base64; data=json.load(sys.stdin); [open('output.pdf','wb').write(base64.b64decode(d['document'])) for d in (data.get('model',{}).get('docDetails',None) or []) if d.get('document')]"
+```
+
+### 4b. Download EOB
+```
+GET {Claims Base}/document-details?policyId={policyId}&claimId={claimId}&petId={petId}&isBlobRequest=true&filePath={filePath}&claimDocumentType=1
+```
+Downloads the Explanation of Benefits. The `filePath` comes from the `eobDetails` array in the document list response (the `eobFilePath` field). Use `claimDocumentType=1` for EOBs.
+
+**Important:** The EOB PDF is returned as a base64-encoded string in the `eobDocument` field of the first item in `eobDetails`. Decode and save it:
+```bash
+curl -s '...' | python3 -c "import sys,json,base64; data=json.load(sys.stdin); eob=data.get('model',{}).get('eobDetails',None); [open('eob.pdf','wb').write(base64.b64decode(e['eobDocument'])) for e in (eob or []) if e.get('eobDocument')]"
+```
 
 ### 5. Get Policy Packet
 ```

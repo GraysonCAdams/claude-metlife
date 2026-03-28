@@ -75,24 +75,56 @@ curl -s '{BASE_URL}/{endpoint}' \
 
 Follow these steps **in order** when the user asks to appeal a claim.
 
-### Step 1: Gather All Evidence
+### Step 1: Gather ALL Evidence (Comprehensive — Do Not Cut Corners)
 
 Ask the user for `policyId`, `petId`, and `claimId` if not provided.
 
-**Check the local cache first.** Look in `.metlife-cache/` for:
-- `.metlife-cache/claims/{petId}_{claimId}.json` — claim details
-- `.metlife-cache/claims/{policyId}_{petId}_all.json` — claims history
-- `.metlife-cache/documents/{policyId}_{claimId}_{petId}_list.json` — document list
-- `.metlife-cache/documents/{policyId}_{claimId}_{petId}/` — downloaded EOB files
-- `.metlife-cache/policies/{policyId}_packet.pdf` — policy packet
+**This step requires gathering evidence from ALL claims, not just the target claim.** A denial on one claim often depends on context from other claims — prior approvals, submitted SOAP notes, invoices, and medical records uploaded with related claims. You MUST build a complete picture.
 
-If cached files exist, read from cache. For any missing files, fetch from the API (using the endpoints and headers from the metlife-pets skill) and cache the results. Run independent fetches in parallel.
+#### 1a. Fetch the full claims history
+- Fetch ALL claims for the pet/policy combo: `claim/all?petId={petId}&policyId={policyId}`
+- If a claim covers multiple pets (check the `petIds` array in the response), fetch for each pet.
+- Cache the response to `.metlife-cache/claims/{policyId}_{petId}_all.json`
 
-### Step 2: Read Every Document
+#### 1b. Fetch details and documents for EVERY claim
+For **every claim in the claims history** (not just the target claim):
+1. Fetch claim details using `claim/{claimSourceId}/{claimId}` (note: `claimSourceId` is typically `1`, not the petId)
+2. Fetch the document list for each claim
+3. Download **every document** from every claim — this includes:
+   - **EOBs** (Explanation of Benefits) — contains denial reasons, line items, amounts
+   - **Invoices** — itemized vet bills showing procedures and costs
+   - **SOAP notes** — veterinary medical records documenting diagnosis, treatment, and clinical findings
+   - **Miscellaneous documents** — any other uploaded supporting docs
+4. Download the **policy packet** PDF
 
-1. Read the cached document list JSON. For each document, check if the PDF exists in `.metlife-cache/documents/{policyId}_{claimId}_{petId}/`. Download any missing ones via the API with `isBlobRequest=true`.
-2. Read the policy packet from `.metlife-cache/policies/{policyId}_packet.pdf`.
-3. **Read every downloaded PDF** using the Read tool. Do not skip any. A missed detail could be the key to the appeal.
+**Why all claims matter:** If the user submitted SOAP notes or additional medical records with a follow-up claim, those documents contain critical medical evidence (diagnoses, clinical findings, treatment rationale) that may support the appeal of an earlier or related claim. A denied claim for periodontal disease, for example, may have SOAP notes uploaded on a separate supplemental claim that document the medical necessity. You will miss this evidence if you only look at the target claim.
+
+#### 1c. EOB and document download notes
+- **EOBs**: Use `claimDocumentType=1` with the `eobFilePath` from the `eobDetails` array. The EOB PDF is returned as a base64 string in the `eobDocument` field. Decode and save it.
+- **Submitted documents** (invoices, SOAP notes): Use `claimDocumentType=2` with the `filePath` from the `docDetails` array. The document is returned as a base64 string in the `document` field. Decode and save it.
+- Cache everything to `.metlife-cache/documents/{policyId}_{claimId}_{petId}/`
+
+Run independent fetches in parallel where possible.
+
+### Step 2: Read Every Document — Build a Complete Medical and Claims Timeline
+
+1. **Read the policy packet** from `.metlife-cache/policies/{policyId}_packet.pdf`. Understand what is covered, what is excluded, definitions, and the appeals process.
+
+2. **Read EVERY downloaded document** across ALL claims using the Read tool. This includes:
+   - All EOBs — extract denial reasons, line items, amounts, service dates
+   - All invoices — extract itemized procedures, diagnoses, costs
+   - All SOAP notes and medical records — extract clinical findings, diagnoses, treatment plans, veterinary assessments
+   - Any other uploaded documents
+
+3. **Build a comprehensive timeline** that includes:
+   - Policy effective date and waiting period end dates
+   - Every claim submission date and decision date
+   - Every service date and what was done
+   - Every diagnosis mentioned across all documents
+   - Which items were paid vs. denied on each claim, and why
+   - Any prior approvals or payments for the same or related conditions
+
+4. **Do not skip any document.** A missed SOAP note or invoice could contain the key evidence for the appeal. If a document fails to download, note it and tell the user.
 
 ### Step 3: Extract Denial / Underpayment Details
 
