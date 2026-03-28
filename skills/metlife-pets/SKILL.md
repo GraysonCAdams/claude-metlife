@@ -112,6 +112,7 @@ POST https://apis.metlife.com/external/pet-services/authentication/v2/refreshTok
 ```
 
 ### Refresh headers
+**Important:** The refresh endpoint requires `session-id` and `transaction-id` headers. Generate a timestamp-based ID.
 ```
 accept: */*
 cache-control: no-cache, no-store
@@ -121,13 +122,16 @@ is-ping-token: true
 ocp-apim-subscription-key: 979fd0c2ea204f1095d7faa8154c39b0
 origin: https://mypets.metlife.com
 referer: https://mypets.metlife.com/
+session-id: {timestamp}cls
+transaction-id: {timestamp}cls
 x-app-version: 4.5.1
 ```
 
 ### Refresh body
 Send the refresh token as a JSON string (quoted):
 ```bash
-curl -s 'https://apis.metlife.com/external/pet-services/authentication/v2/refreshToken_v2' \
+SESSION_ID="$(date +%s%3N)cls"
+RESPONSE=$(curl -s 'https://apis.metlife.com/external/pet-services/authentication/v2/refreshToken_v2' \
   -H 'accept: */*' \
   -H 'cache-control: no-cache, no-store' \
   -H 'channel-id: PetMobile' \
@@ -136,14 +140,17 @@ curl -s 'https://apis.metlife.com/external/pet-services/authentication/v2/refres
   -H 'ocp-apim-subscription-key: 979fd0c2ea204f1095d7faa8154c39b0' \
   -H 'origin: https://mypets.metlife.com' \
   -H 'referer: https://mypets.metlife.com/' \
+  -H "session-id: $SESSION_ID" \
+  -H "transaction-id: $SESSION_ID" \
   -H 'x-app-version: 4.5.1' \
-  --data-raw "\"$METLIFE_REFRESH_TOKEN\""
+  --data-raw "\"$METLIFE_REFRESH_TOKEN\"")
 ```
 
-The response contains a new `access_token`. Extract it and update the env var:
+The response contains `access_token` and a new `refresh_token`. Update BOTH env vars:
 ```bash
-NEW_TOKEN=$(curl -s '...' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-export METLIFE_BEARER_TOKEN="$NEW_TOKEN"
+export METLIFE_BEARER_TOKEN=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+NEW_REFRESH=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('refresh_token',''))" 2>/dev/null)
+[ -n "$NEW_REFRESH" ] && export METLIFE_REFRESH_TOKEN="$NEW_REFRESH"
 ```
 
 ### Auto-refresh on 401
@@ -158,8 +165,9 @@ At the start of any session that will make API calls, create a helper script at 
 ```bash
 #!/bin/bash
 refresh_token() {
-  local NEW_TOKEN
-  NEW_TOKEN=$(curl -s 'https://apis.metlife.com/external/pet-services/authentication/v2/refreshToken_v2' \
+  local SESSION_ID="$(date +%s%3N)cls"
+  local RESPONSE
+  RESPONSE=$(curl -s 'https://apis.metlife.com/external/pet-services/authentication/v2/refreshToken_v2' \
     -H 'accept: */*' \
     -H 'cache-control: no-cache, no-store' \
     -H 'channel-id: PetMobile' \
@@ -168,10 +176,17 @@ refresh_token() {
     -H 'ocp-apim-subscription-key: 979fd0c2ea204f1095d7faa8154c39b0' \
     -H 'origin: https://mypets.metlife.com' \
     -H 'referer: https://mypets.metlife.com/' \
+    -H "session-id: $SESSION_ID" \
+    -H "transaction-id: $SESSION_ID" \
     -H 'x-app-version: 4.5.1' \
-    --data-raw "\"$METLIFE_REFRESH_TOKEN\"" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)
+    --data-raw "\"$METLIFE_REFRESH_TOKEN\"" 2>/dev/null)
+  local NEW_TOKEN
+  NEW_TOKEN=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)
+  local NEW_REFRESH
+  NEW_REFRESH=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('refresh_token',''))" 2>/dev/null)
   if [ -n "$NEW_TOKEN" ] && [ "$NEW_TOKEN" != "None" ]; then
     export METLIFE_BEARER_TOKEN="$NEW_TOKEN"
+    [ -n "$NEW_REFRESH" ] && export METLIFE_REFRESH_TOKEN="$NEW_REFRESH"
     echo "Token refreshed successfully"
     return 0
   else
