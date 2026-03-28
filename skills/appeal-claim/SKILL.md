@@ -92,8 +92,10 @@ For **every claim in the claims history** (not just the target claim):
 
 #### 1c. EOB and document download notes
 - **EOBs**: Use `claimDocumentType=1` with the `eobFilePath` from the `eobDetails` array. The EOB PDF is returned as a base64 string in the `eobDocument` field. Decode and save it.
-- **Submitted documents** (invoices, SOAP notes): Use `claimDocumentType=2` with the `filePath` from the `docDetails` array. The document is returned as a base64 string in the `document` field. Decode and save it.
-- Cache everything to `.metlife-cache/documents/{policyId}_{claimId}_{petId}/`
+- **Submitted documents** (invoices, SOAP notes): Use `claimDocumentType=1` with the `filePath` from the `docDetails` array. The document may be returned in either `eobDetails[].eobDocument` or `docDetails[].document` as a base64 string. Check both fields.
+- **If a download returns null**, try the other `claimDocumentType` (1 or 2) and try both petIds on the policy. The API is inconsistent about which combination works — some documents only download with a specific petId even if tagged for multiple pets. Use a fallback loop: try (petId1, docType1) → (petId1, docType2) → (petId2, docType1) → (petId2, docType2).
+- **URL-encode filePaths** that contain spaces (e.g., `Peaches%20Emr.pdf`).
+- Cache everything to `.metlife-cache/documents/{policyId}_{claimId}_soaps/` for SOAP records.
 - **Validate responses with `is_cacheable` before caching** — never write error responses to disk.
 
 Run independent fetches in parallel where possible.
@@ -116,7 +118,16 @@ Run independent fetches in parallel where possible.
    - Which items were paid vs. denied on each claim, and why
    - Any prior approvals or payments for the same or related conditions
 
-4. **Do not skip any document.** A missed SOAP note or invoice could contain the key evidence for the appeal. If a document fails to download, note it and tell the user.
+4. **Build a Prior Claims Evidence Map.** For every prior claim, catalog:
+   - **What was claimed and what was approved/denied** — if MetLife previously approved dental cleanings, that's evidence they accepted the pet's dental health status at that time
+   - **What SOAP notes say about the denied condition** — if prior SOAP notes from routine dental cleanings document healthy teeth, normal periodontal findings, or no mention of periodontal disease, that is direct evidence against a pre-existing determination. Extract exact quotes.
+   - **What SOAP notes DON'T mention** — the absence of findings is evidence too. If a vet examined the pet's teeth during a cleaning and the SOAP notes contain no mention of periodontal disease, gingivitis, or tooth resorption, document that explicitly.
+   - **Prior approval patterns** — if MetLife approved related treatments (e.g., dental cleanings, dental X-rays) in prior years, that establishes they accepted the pet's dental condition was not pre-existing at that time
+   - **Date-stamped clinical observations** — any clinical findings with dates that establish when a condition first appeared or was first documented
+
+   This evidence map is critical for the appeal letter. The strongest pre-existing condition disputes are built on the insurer's own prior approvals and the vet's own contemporaneous clinical records showing the condition did not exist before coverage.
+
+5. **Do not skip any document.** A missed SOAP note or invoice could contain the key evidence for the appeal. If a document fails to download, note it and tell the user.
 
 ### Step 3: Extract Denial / Underpayment Details
 
@@ -149,6 +160,16 @@ Identify the strongest argument(s) by analyzing the gap between the denial reaso
 | **Coding error** | Wrong diagnosis or procedure code was applied to the claim |
 | **Waiting period satisfied** | Condition first presented after all applicable waiting periods elapsed |
 | **Continuation of covered condition** | A previously approved condition was suddenly excluded on a follow-up claim |
+| **Prior approval contradiction** | MetLife approved related treatments in prior claims, establishing the condition was not pre-existing at that time |
+| **SOAP note evidence** | Veterinary records from prior visits document the absence of the condition now being called pre-existing |
+
+**For pre-existing condition disputes, you MUST use the Prior Claims Evidence Map from Step 2.** The appeal letter should cite:
+- Specific prior claims where related treatments were approved (claim numbers, dates, amounts, what was covered)
+- Exact quotes or findings from SOAP notes that document the pet's condition at prior visits
+- The absence of any mention of the denied condition in prior veterinary records
+- The timeline showing when the condition was first clinically documented vs. when coverage began
+
+Do not make vague assertions like "there is no prior history." Instead, cite the specific records: "The SOAP notes from the March 2025 dental cleaning (submitted with Claim #XXXXXX) document [specific findings] with no mention of periodontal disease. MetLife approved that claim in full."
 
 ### Step 5b: Adversarial Simulation — DO NOT SKIP
 
@@ -162,6 +183,7 @@ After Steps 3-5, you have the denial details, the policy language, and candidate
 - All relevant policy sections (quoted verbatim with section names/page numbers)
 - Key dates: policy effective date, waiting period end, date of service, date of first symptoms
 - Dollar amounts: billed, allowed, paid, member responsibility
+- **The full Prior Claims Evidence Map from Step 2** — prior approved claims, SOAP note findings/quotes, absence-of-condition evidence, and the approval timeline
 - Any other facts from the claim data and vet records
 
 Then launch these three agents **in parallel**, each given the briefing file to read:
@@ -270,6 +292,8 @@ I'm appealing the [denial/underpayment] of Claim [ID]. The Explanation of Benefi
 [1-2 paragraphs: what happened. Plain facts. "On [date], I took [pet name] to [vet] for [reason]. The vet diagnosed [condition] and performed [treatment]. The total charge was $X."]
 
 [1-2 paragraphs: why the denial is wrong. "The EOB cites [specific reason]. However, my policy's [section name] states [quote relevant language]. This treatment falls under [coverage category] because [reason]." Be direct and cite the policy.]
+
+[If pre-existing is cited, 1-2 paragraphs citing prior claims evidence. Reference specific prior claims by number and date where MetLife approved related treatments. Quote or describe SOAP note findings from prior vet visits that document the condition did NOT exist at that time. Example: "On [date], [pet name] had a dental cleaning under Claim #[number], which MetLife approved. The SOAP notes from that visit, which I submitted with the claim, describe [findings] with no mention of periodontal disease. If [pet name] had a pre-existing periodontal condition, it would have been documented during that examination." Do not make vague assertions — cite the specific records and what they show.]
 
 [If applicable, 1 paragraph on timeline: "My policy took effect on [date]. The waiting period for illness was [X] days, ending on [date]. [Pet name] first showed symptoms on [date], which was [X] days/months after coverage began. This does not meet the policy's definition of a Pre-Existing Condition."]
 

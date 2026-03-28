@@ -1,297 +1,311 @@
 #!/usr/bin/env python3
 """Generate MetLife Pet Insurance Claim Appeal Form PDFs.
 
+Overlays claim data onto the official blank MetLife appeal form PDF,
+and optionally appends an appeal letter as additional pages.
+
 Usage:
-    python3 generate-appeal-form.py                  # blank template
-    python3 generate-appeal-form.py --fill data.json  # filled from JSON
+    python3 generate-appeal-form.py --fill data.json --letter appeal-claim-3342951.md
+    python3 generate-appeal-form.py --fill data.json --letter letter.md -o out.pdf
 """
 
 import argparse
+import io
 import json
+import os
 import sys
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.units import inch
+
+from pypdf import PdfReader, PdfWriter
+from reportlab.lib.pagesizes import letter as LETTER_SIZE
 from reportlab.lib.colors import HexColor
+from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
-from reportlab.lib.enums import TA_LEFT
 
-PAGE_W, PAGE_H = letter
-MARGIN = 0.75 * inch
-BLUE = HexColor("#0072C6")
-DARK = HexColor("#333333")
-LIGHT_GRAY = HexColor("#F5F5F5")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BLANK_FORM = os.path.join(SCRIPT_DIR, "appeal-form-blank.pdf")
+
+PAGE_W, PAGE_H = LETTER_SIZE
+MARGIN = 1.0 * 72  # 1 inch
+
+# --- Field coordinates (from the official blank form, page 2) ---
+MEMBER_FIELDS_LEFT = {
+    "policy_number":   (165, 571.4),
+    "pet_parent_name": (165, 557.4),
+    "address":         (120, 543.4),
+    "city":            (95,  530.4),
+}
+MEMBER_FIELDS_RIGHT = {
+    "state": (310, 529.6),
+    "zip":   (95,  516.6),
+    "phone": (235, 515.6),
+    "pet_name": (120, 502.4),
+}
+
+CLAIM_TREATMENT_DATE_X = 390
+CLAIM_TREATMENT_DATE_Y = 557.0
+CLAIM_ROW_SPACING = 20
+CLAIM_PET_NAME_X = 390
+CLAIM_PET_NAME_Y = 517.0
+
+STAMP_X = 380
+STAMP_Y = 230
 
 
-def draw_form(c, data=None):
-    """Draw the MetLife Claim Appeal Form on the canvas."""
+def create_overlay(data):
+    """Create a transparent PDF overlay with the filled data."""
     d = data or {}
-    y = PAGE_H - MARGIN
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=LETTER_SIZE)
 
-    # Header bar
-    c.setFillColor(BLUE)
-    c.rect(0, y - 10, PAGE_W, 50, fill=1, stroke=0)
-    c.setFillColor(HexColor("#FFFFFF"))
-    c.setFont("Helvetica-Bold", 18)
-    c.drawString(MARGIN, y + 5, "Claim Appeal Form")
+    # Page 1: instructions cover page (no data needed)
+    c.showPage()
+
+    # Page 2: the actual form
     c.setFont("Helvetica", 10)
-    c.drawString(MARGIN, y - 8, "MetLife Pet Insurance")
+    c.setFillColor(HexColor("#000000"))
 
-    y -= 50
+    for field, (x, y) in MEMBER_FIELDS_LEFT.items():
+        value = d.get(field, "")
+        if value:
+            c.drawString(x, y, str(value))
 
-    # Section 1: Member Info
-    y -= 20
-    c.setFillColor(BLUE)
-    c.roundRect(MARGIN - 5, y - 5, 25, 25, 5, fill=1, stroke=0)
-    c.setFillColor(HexColor("#FFFFFF"))
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(MARGIN + 2, y, "1")
-    c.setFillColor(DARK)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(MARGIN + 30, y, "Member Info")
+    for field, (x, y) in MEMBER_FIELDS_RIGHT.items():
+        value = d.get(field, "")
+        if value:
+            c.drawString(x, y, str(value))
 
-    y -= 30
-    fields_left = [
-        ("Policy Number:", d.get("policy_number", "")),
-        ("Pet Parent Name:", d.get("pet_parent_name", "")),
-        ("Address:", d.get("address", "")),
-        ("City:", d.get("city", "")),
-    ]
-    fields_right = [
-        ("State:", d.get("state", "")),
-        ("Zip:", d.get("zip", "")),
-        ("Phone:", d.get("phone", "")),
-        ("Pet Name:", d.get("pet_name", "")),
-    ]
+    claims = d.get("claims", [])
+    if claims:
+        claim = claims[0]
+        treat_date = claim.get("treatment_date", "")
+        claim_num = claim.get("claim_number", "")
+        claim_label = treat_date
+        if claim_num:
+            claim_label += f" (Claim #{claim_num})"
+        c.drawString(CLAIM_TREATMENT_DATE_X, CLAIM_TREATMENT_DATE_Y, claim_label)
 
-    c.setFont("Helvetica", 10)
-    start_y = y
-    for label, value in fields_left:
-        c.setFillColor(DARK)
-        c.drawString(MARGIN, y, label)
-        c.setFillColor(HexColor("#000000"))
-        c.drawString(MARGIN + 100, y, value)
-        # underline
-        c.setStrokeColor(HexColor("#CCCCCC"))
-        c.line(MARGIN + 100, y - 3, MARGIN + 280, y - 3)
-        y -= 22
-
-    y = start_y
-    x_right = PAGE_W / 2 + 20
-    for label, value in fields_right:
-        c.setFillColor(DARK)
-        c.drawString(x_right, y, label)
-        c.setFillColor(HexColor("#000000"))
-        c.drawString(x_right + 80, y, value)
-        c.setStrokeColor(HexColor("#CCCCCC"))
-        c.line(x_right + 80, y - 3, x_right + 240, y - 3)
-        y -= 22
-
-    y -= 15
-
-    # Section 2: Claim to be Reviewed
-    c.setFillColor(BLUE)
-    c.roundRect(MARGIN - 5, y - 5, 25, 25, 5, fill=1, stroke=0)
-    c.setFillColor(HexColor("#FFFFFF"))
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(MARGIN + 2, y, "2")
-    c.setFillColor(DARK)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(MARGIN + 30, y, "Claim to be Reviewed")
-
-    y -= 30
-    claims = d.get("claims", [{"treatment_date": "", "claim_number": "", "claim_pet_name": ""}])
-    c.setFont("Helvetica", 10)
-    for claim in claims:
-        c.setFillColor(DARK)
-        c.drawString(MARGIN, y, "Treatment Date on Original Claim:")
-        c.setFillColor(HexColor("#000000"))
-        c.drawString(MARGIN + 195, y, claim.get("treatment_date", ""))
-        c.setStrokeColor(HexColor("#CCCCCC"))
-        c.line(MARGIN + 195, y - 3, MARGIN + 340, y - 3)
-
-        c.setFillColor(DARK)
-        c.drawString(PAGE_W / 2 + 20, y, "Claim #:")
-        c.setFillColor(HexColor("#000000"))
-        c.drawString(PAGE_W / 2 + 70, y, claim.get("claim_number", ""))
-        c.setStrokeColor(HexColor("#CCCCCC"))
-        c.line(PAGE_W / 2 + 70, y - 3, PAGE_W - MARGIN, y - 3)
-        y -= 18
-
-        c.setFillColor(DARK)
-        c.drawString(MARGIN, y, "Pet Name:")
-        c.setFillColor(HexColor("#000000"))
-        c.drawString(MARGIN + 65, y, claim.get("claim_pet_name", ""))
-        c.setStrokeColor(HexColor("#CCCCCC"))
-        c.line(MARGIN + 65, y - 3, MARGIN + 250, y - 3)
-        y -= 25
-
-    y -= 10
-
-    # Section 3: Supporting Documentation
-    c.setFillColor(BLUE)
-    c.roundRect(MARGIN - 5, y - 5, 25, 25, 5, fill=1, stroke=0)
-    c.setFillColor(HexColor("#FFFFFF"))
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(MARGIN + 2, y, "3")
-    c.setFillColor(DARK)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(MARGIN + 30, y, "Supporting Documentation")
-
-    y -= 25
-    c.setFont("Helvetica", 9)
-    c.setFillColor(DARK)
-    c.drawString(MARGIN, y, "Please attach any additional documentation necessary to re-evaluate your denied claim such as:")
-    y -= 18
-    bullets = [
-        "Clarification of diagnosis (along with new diagnosis if applicable) within your Pet's legal medical records",
-        "Clarification of symptoms / circumstances related to the claimed incident within your Pet's legal medical records",
-        "Additional / Amended legal medical records",
-    ]
-    for bullet in bullets:
-        c.drawString(MARGIN + 15, y, "\u2022  " + bullet)
-        y -= 15
-
-    y -= 15
-
-    # Section 4: Sign and Date
-    c.setFillColor(BLUE)
-    c.roundRect(MARGIN - 5, y - 5, 25, 25, 5, fill=1, stroke=0)
-    c.setFillColor(HexColor("#FFFFFF"))
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(MARGIN + 2, y, "4")
-    c.setFillColor(DARK)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(MARGIN + 30, y, "Sign and Date")
-
-    y -= 22
-    c.setFont("Helvetica", 8)
-    c.setFillColor(DARK)
-    declaration = (
-        "Policyholder declaration: I declare my veterinarian recommended the treatment for which I am claiming. "
-        "The particulars given are correct to the best of my knowledge and belief. I authorize my veterinarian to "
-        "release medical records and give consent to MetLife Pet Insurance, to communicate with my veterinarian "
-        "or veterinarian's staff."
-    )
-    # Word wrap the declaration
-    from reportlab.lib.utils import simpleSplit
-    lines = simpleSplit(declaration, "Helvetica", 8, PAGE_W - 2 * MARGIN)
-    for line in lines:
-        c.drawString(MARGIN, y, line)
-        y -= 12
-
-    y -= 10
-    c.setFont("Helvetica", 10)
-
-    # Signature lines
-    sig_fields = [
-        ("Pet Parent Signature", MARGIN, d.get("pet_parent_sig_date", "")),
-        ("Treating Veterinarian Signature", MARGIN, d.get("vet_sig_date", "")),
-    ]
-    for label, x, date_val in sig_fields:
-        c.setStrokeColor(HexColor("#000000"))
-        c.line(x, y, x + 250, y)
-        c.line(x + 280, y, x + 380, y)
-        c.setFont("Helvetica", 8)
-        c.setFillColor(DARK)
-        c.drawString(x, y - 12, label)
-        c.drawString(x + 280, y - 12, "Date")
-        if date_val:
+        if len(claims) > 1:
+            c.setFillColor(HexColor("#FFFFFF"))
+            c.rect(CLAIM_TREATMENT_DATE_X - 2, 535, 220, 14, fill=1, stroke=0)
+            c.setFillColor(HexColor("#000000"))
+            y_offset = CLAIM_TREATMENT_DATE_Y - CLAIM_ROW_SPACING
+            for extra_claim in claims[1:]:
+                t = extra_claim.get("treatment_date", "")
+                n = extra_claim.get("claim_number", "")
+                label = t
+                if n:
+                    label += f" (Claim #{n})"
+                c.setFont("Helvetica", 9)
+                c.drawString(CLAIM_TREATMENT_DATE_X, y_offset, label)
+                y_offset -= CLAIM_ROW_SPACING
             c.setFont("Helvetica", 10)
-            c.drawString(x + 285, y + 3, date_val)
-        y -= 35
 
-    # Vet clinic stamp area
-    c.setStrokeColor(HexColor("#CCCCCC"))
-    c.setDash(3, 3)
+        pet_name = claim.get("claim_pet_name", "")
+        c.drawString(CLAIM_PET_NAME_X, CLAIM_PET_NAME_Y, pet_name)
+
     vet_stamp = d.get("vet_clinic_stamp", "")
-    stamp_x = PAGE_W / 2 + 40
-    stamp_y = y + 70
-    c.rect(stamp_x, stamp_y - 50, 200, 60, fill=0, stroke=1)
-    c.setDash()
-    c.setFont("Helvetica", 8)
-    c.setFillColor(HexColor("#999999"))
-    c.drawString(stamp_x + 5, stamp_y + 5, "Veterinary Clinic Stamp")
     if vet_stamp:
-        c.setFillColor(DARK)
         c.setFont("Helvetica", 8)
-        lines = vet_stamp.split("\n")
-        sy = stamp_y - 10
-        for line in lines:
-            c.drawString(stamp_x + 10, sy, line)
+        c.setFillColor(HexColor("#333333"))
+        for line in vet_stamp.split("\n"):
+            c.drawString(STAMP_X, STAMP_Y, line)
+            STAMP_Y_local = STAMP_Y
+        sy = STAMP_Y
+        for line in vet_stamp.split("\n"):
+            c.drawString(STAMP_X, sy, line)
             sy -= 11
 
-    y -= 20
+    c.save()
+    buf.seek(0)
+    return buf
 
-    # Fraud warning
-    c.setFont("Helvetica", 6.5)
-    c.setFillColor(HexColor("#666666"))
-    fraud = (
-        "Any person who knowingly and with intent to defraud any insurance company or other person files an application for insurance or "
-        "statement of claim containing any materially false information, or conceals for the purpose of misleading, information concerning any "
-        "fact material thereto, commits a fraudulent insurance act, which is a crime, and shall also be subject to a civil penalty not to exceed "
-        "five thousand dollars and the stated value of the claim for each such violation."
-    )
-    lines = simpleSplit(fraud, "Helvetica", 6.5, PAGE_W - 2 * MARGIN)
-    for line in lines:
-        c.drawString(MARGIN, y, line)
-        y -= 9
 
-    y -= 15
+# Fix the vet stamp rendering (double-write bug above). Let me redo create_overlay cleanly:
+def create_overlay(data):
+    """Create a transparent PDF overlay with the filled data."""
+    d = data or {}
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=LETTER_SIZE)
 
-    # Footer: submission methods
-    c.setFillColor(BLUE)
-    c.rect(0, y - 5, PAGE_W, 25, fill=1, stroke=0)
-    c.setFillColor(HexColor("#FFFFFF"))
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(MARGIN, y, "Send the completed appeal form and documentation to:")
+    # Page 1: instructions cover page (no data needed)
+    c.showPage()
 
-    y -= 30
-    c.setFont("Helvetica-Bold", 8)
-    c.setFillColor(DARK)
-    methods = [
-        ("MAIL TO:", "MetLife Pet Insurance\nClaims Department\n400 Missouri Avenue Suite 105\nJeffersonville, IN 47130"),
-        ("EMAIL TO:", "Pet_Submit_Claim@metlife.com"),
-        ("FAX TO:", "877-281-3348"),
-        ("UPLOAD TO:", "Our Mobile App or\nMyPets Online Account"),
-    ]
-    col_w = (PAGE_W - 2 * MARGIN) / 4
-    for i, (title, detail) in enumerate(methods):
-        x = MARGIN + i * col_w
-        c.setFont("Helvetica-Bold", 8)
-        c.setFillColor(DARK)
-        c.drawString(x, y, title)
-        c.setFont("Helvetica", 7.5)
-        c.setFillColor(HexColor("#555555"))
-        dy = y - 13
-        for line in detail.split("\n"):
-            c.drawString(x, dy, line)
-            dy -= 10
+    # Page 2: the actual form
+    c.setFont("Helvetica", 10)
+    c.setFillColor(HexColor("#000000"))
 
-    # Bottom copyright
-    c.setFont("Helvetica", 6)
-    c.setFillColor(HexColor("#999999"))
-    c.drawCentredString(PAGE_W / 2, 30, "MetLife Pet Insurance | metlifepetinsurance.com")
+    for field, (x, y) in MEMBER_FIELDS_LEFT.items():
+        value = d.get(field, "")
+        if value:
+            c.drawString(x, y, str(value))
+
+    for field, (x, y) in MEMBER_FIELDS_RIGHT.items():
+        value = d.get(field, "")
+        if value:
+            c.drawString(x, y, str(value))
+
+    claims = d.get("claims", [])
+    if claims:
+        claim = claims[0]
+        treat_date = claim.get("treatment_date", "")
+        claim_num = claim.get("claim_number", "")
+        claim_label = treat_date
+        if claim_num:
+            claim_label += f" (Claim #{claim_num})"
+        c.drawString(CLAIM_TREATMENT_DATE_X, CLAIM_TREATMENT_DATE_Y, claim_label)
+
+        if len(claims) > 1:
+            c.setFillColor(HexColor("#FFFFFF"))
+            c.rect(CLAIM_TREATMENT_DATE_X - 2, 535, 220, 14, fill=1, stroke=0)
+            c.setFillColor(HexColor("#000000"))
+            y_offset = CLAIM_TREATMENT_DATE_Y - CLAIM_ROW_SPACING
+            for extra_claim in claims[1:]:
+                t = extra_claim.get("treatment_date", "")
+                n = extra_claim.get("claim_number", "")
+                label = t
+                if n:
+                    label += f" (Claim #{n})"
+                c.setFont("Helvetica", 9)
+                c.drawString(CLAIM_TREATMENT_DATE_X, y_offset, label)
+                y_offset -= CLAIM_ROW_SPACING
+            c.setFont("Helvetica", 10)
+
+        pet_name = claim.get("claim_pet_name", "")
+        c.drawString(CLAIM_PET_NAME_X, CLAIM_PET_NAME_Y, pet_name)
+
+    vet_stamp = d.get("vet_clinic_stamp", "")
+    if vet_stamp:
+        c.setFont("Helvetica", 8)
+        c.setFillColor(HexColor("#333333"))
+        sy = STAMP_Y
+        for line in vet_stamp.split("\n"):
+            c.drawString(STAMP_X, sy, line)
+            sy -= 11
+
+    c.save()
+    buf.seek(0)
+    return buf
+
+
+def render_letter_pages(letter_path):
+    """Render a markdown appeal letter as PDF pages, return as BytesIO."""
+    with open(letter_path) as f:
+        text = f.read()
+
+    paragraphs = text.strip().split("\n\n")
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=LETTER_SIZE)
+
+    font_name = "Helvetica"
+    font_size = 11
+    line_h = 15
+    text_w = PAGE_W - 2 * MARGIN
+
+    y = PAGE_H - MARGIN
+
+    def draw_line(text, x=MARGIN, bold=False):
+        """Draw a single line, handling page breaks."""
+        nonlocal y
+        if y < MARGIN + 20:
+            c.showPage()
+            y = PAGE_H - MARGIN
+        f = "Helvetica-Bold" if bold else font_name
+        c.setFont(f, font_size)
+        c.setFillColor(HexColor("#000000"))
+        c.drawString(x, y, text)
+        y -= line_h
+
+    def wrap_and_draw(text, indent=0, bold=False):
+        """Word-wrap text and draw each line."""
+        f = "Helvetica-Bold" if bold else font_name
+        wrapped = simpleSplit(text, f, font_size, text_w - indent)
+        for i, wl in enumerate(wrapped):
+            draw_line(wl, x=MARGIN + (indent if i > 0 else 0), bold=bold)
+
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+
+        lines_in_para = para.split("\n")
+
+        # Detect numbered list items (e.g. "1. ...", "2. ...")
+        is_numbered = all(
+            line.strip().split(".")[0].isdigit()
+            for line in lines_in_para if line.strip()
+        )
+
+        if is_numbered:
+            for line in lines_in_para:
+                line = line.strip()
+                if not line:
+                    continue
+                wrap_and_draw(line, indent=15)
+                y -= 2
+        elif "\n" in para and not any(len(l) > 90 for l in lines_in_para):
+            # Multi-line short blocks (address, Re: block, closing)
+            for line in lines_in_para:
+                line = line.strip()
+                if not line:
+                    continue
+                is_bold = line.startswith("Re:")
+                wrap_and_draw(line, bold=is_bold)
+        else:
+            # Regular paragraph — join lines and word wrap
+            full = " ".join(l.strip() for l in lines_in_para)
+            wrap_and_draw(full)
+
+        y -= line_h * 0.4
+
+    c.save()
+    buf.seek(0)
+    return buf
 
 
 def main():
     parser = argparse.ArgumentParser(description="Generate MetLife appeal form PDF")
-    parser.add_argument("--fill", help="JSON file with form data")
+    parser.add_argument("--fill", required=True, help="JSON file with form data")
+    parser.add_argument("--letter", help="Appeal letter markdown file to append")
     parser.add_argument("--output", "-o", default=None, help="Output PDF path")
     args = parser.parse_args()
 
-    data = None
-    if args.fill:
-        with open(args.fill) as f:
-            data = json.load(f)
+    if not os.path.exists(BLANK_FORM):
+        print(f"Error: Blank form not found at {BLANK_FORM}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(args.fill) as f:
+        data = json.load(f)
 
     output = args.output
     if not output:
-        output = "appeal-form-blank.pdf" if not data else "appeal-form-filled.pdf"
+        claims = data.get("claims", [])
+        claim_num = claims[0].get("claim_number", "filled") if claims else "filled"
+        output = f"appeal-form-{claim_num}.pdf"
 
-    c = canvas.Canvas(output, pagesize=letter)
-    c.setTitle("MetLife Pet Insurance - Claim Appeal Form")
-    draw_form(c, data)
-    c.save()
+    # Read the official blank form
+    reader = PdfReader(BLANK_FORM)
+
+    # Create the data overlay
+    overlay_buf = create_overlay(data)
+    overlay_reader = PdfReader(overlay_buf)
+
+    # Merge overlay onto blank form
+    writer = PdfWriter()
+    for i, page in enumerate(reader.pages):
+        if i < len(overlay_reader.pages):
+            page.merge_page(overlay_reader.pages[i])
+        writer.add_page(page)
+
+    # Append appeal letter pages if provided
+    if args.letter and os.path.exists(args.letter):
+        letter_buf = render_letter_pages(args.letter)
+        letter_reader = PdfReader(letter_buf)
+        for page in letter_reader.pages:
+            writer.add_page(page)
+
+    with open(output, "wb") as f:
+        writer.write(f)
+
     print(f"Generated: {output}")
 
 

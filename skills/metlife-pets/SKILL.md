@@ -90,10 +90,23 @@ You can also use `metlife_api` which auto-routes to the correct gateway based on
 ## Document Downloads
 
 ### Submitted documents (invoices, SOAP notes)
-The `filePath` comes from the `docDetails` array in the document list response. Use `claimDocumentType=2`:
+The `filePath` comes from the `docDetails` array in the document list response. Use `claimDocumentType=1` (not 2). The response may return the document in either `docDetails[].document` or `eobDetails[].eobDocument` -- check both fields.
+
+**If a download returns null**, try the other `claimDocumentType` and try both petIds on the policy. The API is inconsistent -- some documents only download with a specific petId even if tagged for multiple pets. URL-encode filePaths with spaces.
 ```bash
-RESPONSE=$(metlife_ibm "$IBM_BASE/cl/v1/document-details?policyId=$POLICY&claimId=$CLAIM&petId=$PET&isBlobRequest=true&filePath=$FILE_PATH&claimDocumentType=2")
-echo "$RESPONSE" | python3 -c "import sys,json,base64; data=json.load(sys.stdin); [open('output.pdf','wb').write(base64.b64decode(d['document'])) for d in (data.get('model',{}).get('docDetails',None) or []) if d.get('document')]"
+RESPONSE=$(metlife_ibm "$IBM_BASE/cl/v1/document-details?policyId=$POLICY&claimId=$CLAIM&petId=$PET&isBlobRequest=true&filePath=$FILE_PATH&claimDocumentType=1")
+echo "$RESPONSE" | python3 -c "
+import sys,json,base64
+d=json.load(sys.stdin)
+m=d.get('model',{})
+for e in (m.get('eobDetails') or []):
+    if e.get('eobDocument'):
+        open('output.pdf','wb').write(base64.b64decode(e['eobDocument'])); break
+else:
+    for doc in (m.get('docDetails') or []):
+        if doc.get('document'):
+            open('output.pdf','wb').write(base64.b64decode(doc['document'])); break
+"
 ```
 
 ### EOBs (Explanation of Benefits)
