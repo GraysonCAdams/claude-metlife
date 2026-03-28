@@ -43,33 +43,23 @@ Per the policy language, the appeals process works as follows:
 - **Covered Charge**: Charges for services described in "What We Cover" incurred while the pet is insured.
 - **Written/Writing**: A record on or transmitted by paper or electronic media acceptable to MetLife and consistent with applicable law.
 
-## API Configuration
+## API Access
 
-- **Claims Base URL:** `https://api.metlife.com/metlife/production/api/pet-services/pingv2/cl/v1`
-- **Policy Base URL:** `https://api.metlife.com/metlife/production/api/pet-services/pingv2/p/v1`
-- **Required Headers** (include on every request):
-  ```
-  authorization: Bearer $METLIFE_BEARER_TOKEN
-  x-ibm-client-id: 634dc387-c737-4a6a-86ef-f49056e30898
-  x-app-version: 4.5.1
-  origin: https://mypets.metlife.com
-  referer: https://mypets.metlife.com/
-  accept: */*
-  cache-control: no-cache, no-store
-  ```
-- If any call returns 401, stop and tell the user to refresh their token.
+All API calls use the `metlife.sh` helper script in the repo root. Source it and call `ensure_auth` at the start of every Bash tool call:
 
-### curl template:
 ```bash
-curl -s '{BASE_URL}/{endpoint}' \
-  -H 'accept: */*' \
-  -H "authorization: Bearer $METLIFE_BEARER_TOKEN" \
-  -H 'cache-control: no-cache, no-store' \
-  -H 'origin: https://mypets.metlife.com' \
-  -H 'referer: https://mypets.metlife.com/' \
-  -H 'x-app-version: 4.5.1' \
-  -H 'x-ibm-client-id: 634dc387-c737-4a6a-86ef-f49056e30898'
+cd /path/to/claude-metlife
+source metlife.sh
+AUTH_RESULT=$(ensure_auth)
+if [ "$AUTH_RESULT" = "AUTH_NEEDED" ]; then
+  echo "AUTH_NEEDED"
+  exit 0
+fi
 ```
+
+If `AUTH_NEEDED` is returned, ask the user for their MetLife email and password and call `metlife_login "email" "password"`. See the `metlife-pets` skill for full API documentation.
+
+Use `metlife_ibm` for claims/documents/policy endpoints and `metlife_apim` for pets/policies list. Always validate responses with `is_cacheable` before writing to cache.
 
 ## Appeal Workflow
 
@@ -82,13 +72,13 @@ Ask the user for `policyId`, `petId`, and `claimId` if not provided.
 **This step requires gathering evidence from ALL claims, not just the target claim.** A denial on one claim often depends on context from other claims — prior approvals, submitted SOAP notes, invoices, and medical records uploaded with related claims. You MUST build a complete picture.
 
 #### 1a. Fetch the full claims history
-- Fetch ALL claims for the pet/policy combo: `claim/all?petId={petId}&policyId={policyId}`
+- Fetch ALL claims for the pet/policy combo: `metlife_ibm "$IBM_BASE/cl/v1/claim/all?petId={petId}&policyId={policyId}"`
 - If a claim covers multiple pets (check the `petIds` array in the response), fetch for each pet.
 - Cache the response to `.metlife-cache/claims/{policyId}_{petId}_all.json`
 
 #### 1b. Fetch details and documents for EVERY claim
 For **every claim in the claims history** (not just the target claim):
-1. Fetch claim details using `claim/{claimSourceId}/{claimId}` (note: `claimSourceId` is typically `1`, not the petId)
+1. Fetch claim details using `metlife_ibm "$IBM_BASE/cl/v1/claim/{claimSourceId}/{claimId}"`
 2. Fetch the document list for each claim
 3. Download **every document** from every claim — this includes:
    - **EOBs** (Explanation of Benefits) — contains denial reasons, line items, amounts
@@ -103,6 +93,7 @@ For **every claim in the claims history** (not just the target claim):
 - **EOBs**: Use `claimDocumentType=1` with the `eobFilePath` from the `eobDetails` array. The EOB PDF is returned as a base64 string in the `eobDocument` field. Decode and save it.
 - **Submitted documents** (invoices, SOAP notes): Use `claimDocumentType=2` with the `filePath` from the `docDetails` array. The document is returned as a base64 string in the `document` field. Decode and save it.
 - Cache everything to `.metlife-cache/documents/{policyId}_{claimId}_{petId}/`
+- **Validate responses with `is_cacheable` before caching** — never write error responses to disk.
 
 Run independent fetches in parallel where possible.
 
