@@ -1,8 +1,7 @@
 ---
 name: appeal-claim
 description: This skill should be used when the user asks to appeal a MetLife pet insurance claim, dispute a denial, challenge an underpayment, draft an appeal letter, review an EOB for appeal grounds, or fight a pet insurance claim decision.
-argument-hint: [policy <policyId>] [pet <petId>] [claim <claimId>]
-allowed-tools: [Bash, Read, Glob, Write, Agent]
+argument-hint: "[policy <policyId>] [pet <petId>] [claim <claimId>]"
 ---
 
 # MetLife Pet Insurance Claim Appeal
@@ -78,17 +77,21 @@ Follow these steps **in order** when the user asks to appeal a claim.
 
 ### Step 1: Gather All Evidence
 
-Ask the user for `policyId`, `petId`, and `claimId` if not provided. Then fetch all of the following — run independent calls in parallel:
+Ask the user for `policyId`, `petId`, and `claimId` if not provided.
 
-1. **Claim details** — `GET {Claims Base}/claim/{petId}/{claimId}`
-2. **Full claims history** — `GET {Claims Base}/claim/all?petId={petId}&policyId={policyId}`
-3. **Claim documents (EOBs)** — `GET {Claims Base}/document-details?policyId={policyId}&claimId={claimId}&petId={petId}`
-4. **Policy packet** — `GET {Policy Base}/policy/{policyId}/policyPacket`
+**Check the local cache first.** Look in `.metlife-cache/` for:
+- `.metlife-cache/claims/{petId}_{claimId}.json` — claim details
+- `.metlife-cache/claims/{policyId}_{petId}_all.json` — claims history
+- `.metlife-cache/documents/{policyId}_{claimId}_{petId}_list.json` — document list
+- `.metlife-cache/documents/{policyId}_{claimId}_{petId}/` — downloaded EOB files
+- `.metlife-cache/policies/{policyId}_packet.pdf` — policy packet
 
-### Step 2: Download and Read Every Document
+If cached files exist, read from cache. For any missing files, fetch from the API (using the endpoints and headers from the metlife-pets skill) and cache the results. Run independent fetches in parallel.
 
-1. From the document list response, download **each EOB** using `isBlobRequest=true&filePath={filePath}&claimDocumentType={claimDocumentType}`. Save as PDFs locally.
-2. Save the policy packet PDF locally.
+### Step 2: Read Every Document
+
+1. Read the cached document list JSON. For each document, check if the PDF exists in `.metlife-cache/documents/{policyId}_{claimId}_{petId}/`. Download any missing ones via the API with `isBlobRequest=true`.
+2. Read the policy packet from `.metlife-cache/policies/{policyId}_packet.pdf`.
 3. **Read every downloaded PDF** using the Read tool. Do not skip any. A missed detail could be the key to the appeal.
 
 ### Step 3: Extract Denial / Underpayment Details

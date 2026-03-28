@@ -8,5 +8,11 @@ token.txt
 *.txt
 !README.txt
 
+# Cached API responses and documents
+.metlife-cache/
+
+# Desktop skill build artifacts
+desktop-skills/
+
 # OS
 .DS_Store
