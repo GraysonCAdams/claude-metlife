@@ -1,0 +1,73 @@
+name: Build Desktop Skills
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'skills/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build desktop skill files
+        run: |
+          mkdir -p dist
+
+          # For each skill, create a standalone .md file for Claude Desktop upload
+          for skill_dir in skills/*/; do
+            skill_name=$(basename "$skill_dir")
+            skill_file="$skill_dir/SKILL.md"
+
+            if [ ! -f "$skill_file" ]; then
+              echo "Skipping $skill_name: no SKILL.md"
+              continue
+            fi
+
+            echo "Building desktop skill: $skill_name"
+            cp "$skill_file" "dist/${skill_name}.md"
+
+            # Also build a .zip with the full skill directory (supports reference files)
+            (cd skills && zip -r "../dist/${skill_name}.zip" "$skill_name/")
+          done
+
+          ls -la dist/
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Generate version tag from short SHA
+          VERSION="v0.1.0-$(git rev-parse --short HEAD)"
+
+          # Delete existing release with same tag if it exists
+          gh release delete "$VERSION" --yes 2>/dev/null || true
+          git push origin --delete "$VERSION" 2>/dev/null || true
+
+          # Create release with all built files
+          gh release create "$VERSION" dist/* \
+            --title "Desktop Skills $VERSION" \
+            --notes "$(cat <<'EOF'
+          ## Claude Desktop Skills
+
+          Download and upload these to Claude Desktop via **+ → Skills → Upload skill**.
+
+          ### Files
+          - **metlife-pets.md** — API query skill (standalone .md)
+          - **metlife-pets.zip** — API query skill (zip with full directory)
+          - **appeal-claim.md** — Claim appeal skill (standalone .md)
+          - **appeal-claim.zip** — Claim appeal skill (zip with full directory)
+
+          ### Setup
+          After uploading, set your bearer token:
+          ```
+          export METLIFE_BEARER_TOKEN="<token from mypets.metlife.com>"
+          ```
+          EOF
+          )"
