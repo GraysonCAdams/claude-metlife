@@ -127,7 +127,35 @@ Be honest: if the denial appears valid after thorough analysis, tell the user an
 
 ### Step 6: Draft the Appeal Letter
 
-Write a formal appeal letter. Per policy, it **must** include: (1) your name, (2) your pet's name, (3) identification of the claim denial being appealed, and (4) an explanation of why you believe the denial was incorrect. You may also include written comments, documents, records, or other supporting information. Use this structure:
+Write a formal appeal letter. Per policy, it **must** include: (1) your name, (2) your pet's name, (3) identification of the claim denial being appealed, and (4) an explanation of why you believe the denial was incorrect. You may also include written comments, documents, records, or other supporting information.
+
+#### Writing Tone and Style Rules
+
+The letter must read like a real person wrote it — a pet owner who is frustrated but composed. Follow these rules strictly:
+
+**DO NOT:**
+- Use em dashes (—). Use commas, periods, or "and" instead.
+- Use emojis anywhere in the letter.
+- Use filler phrases like "I hope this letter finds you well", "I would like to take this opportunity", "It is worth noting that", "I want to emphasize", "In light of the foregoing".
+- Use "furthermore", "moreover", "additionally", "consequently", "thus", "hence", "therefore" to start sentences. Just start the next sentence.
+- Use "I am reaching out", "I am writing to express", or similar throat-clearing.
+- Use bullet points in the body paragraphs. Use normal prose paragraphs instead. Bullet points are only OK in a short list of attached documents at the end.
+- Bold or italicize words for emphasis in the body. Let the facts speak.
+- Use the word "utilize" (say "use"). Don't say "prior to" (say "before"). Don't say "in order to" (say "to").
+- Write in a legalistic or corporate tone. This is a letter from a person, not a law firm.
+- Use exclamation marks.
+
+**DO:**
+- Write in plain, direct English. Short sentences are fine. Vary sentence length naturally.
+- Be specific and factual. Name dates, dollar amounts, policy section titles, and quote the policy where it helps.
+- Sound like someone who has read their policy carefully and knows the denial doesn't add up.
+- Be firm but not aggressive. The tone is: "I've reviewed this, the denial doesn't match the policy, here's why, please fix it."
+- Use "I" naturally. This is a first-person letter.
+- Keep paragraphs short (3-5 sentences max).
+- Use simple transitions: "The EOB states...", "However, my policy says...", "The treatment happened on..."
+- Format the letter like a normal typed letter you'd print and mail. Left-aligned, standard paragraphs, no fancy formatting.
+
+Use this structure:
 
 ---
 
@@ -141,31 +169,24 @@ Policy Number: [Policy ID]
 Pet Name: [from claim data]
 Date(s) of Service: [from EOB]
 
-Dear MetLife Pet Insurance Appeals Department,
+To Whom It May Concern,
 
-I am writing to formally appeal the [denial/underpayment] of Claim [ID], as detailed in the Explanation of Benefits dated [EOB date]. This appeal is submitted within the 90-day appeal window.
+I'm appealing the [denial/underpayment] of Claim [ID]. The Explanation of Benefits I received on [EOB date] states [quote the denial reason]. After reviewing my policy, I believe this determination is incorrect.
 
-**Summary of Claim**
-[Brief factual summary: the visit, diagnosis, treatment performed, and amount billed.]
+[1-2 paragraphs: what happened. Plain facts. "On [date], I took [pet name] to [vet] for [reason]. The vet diagnosed [condition] and performed [treatment]. The total charge was $X."]
 
-**Basis for the Claim Decision**
-[Quote the exact denial/reduction reason from the EOB — code and description.]
+[1-2 paragraphs: why the denial is wrong. "The EOB cites [specific reason]. However, my policy's [section name] states [quote relevant language]. This treatment falls under [coverage category] because [reason]." Be direct and cite the policy.]
 
-**Why This Decision Is Incorrect**
-[Systematically address the denial reason. Cite specific policy sections by name/number/page. Include dates, amounts, and facts that contradict the denial basis. This is the core of the appeal — be thorough and specific.]
+[If applicable, 1 paragraph on timeline: "My policy took effect on [date]. The waiting period for illness was [X] days, ending on [date]. [Pet name] first showed symptoms on [date], which was [X] days/months after coverage began. This does not meet the policy's definition of a Pre-Existing Condition."]
 
-**Supporting Policy Language**
-[Direct quotes from the policy packet that support coverage, with section references. If the exclusion was misapplied, quote both the exclusion AND the coverage term to show the conflict.]
+[1 paragraph: the math, if relevant. "Per my policy, covered charges are reimbursed at [X]% after a $[X] deductible. The correct reimbursement should be: ($[billed] - $[deductible]) x [X]% = $[amount]. The EOB shows a payment of $[paid], which is $[difference] less than what the policy provides."]
 
-**Timeline of Events** *(if applicable — especially for pre-existing condition disputes)*
-[Chronological list: policy effective date → waiting period end → first symptom → diagnosis → treatment. Show that the condition is not pre-existing per the policy definition.]
+Based on the above, I'm asking that you [reverse the denial and reimburse $X / recalculate the reimbursement to $X].
 
-**Requested Resolution**
-[State exactly what you're asking for: full reimbursement of $X, recalculation per benefit schedule, etc. Show the math if relevant.]
-
-I respectfully request a full review of this claim and reversal of the [denial/underpayment]. I have included [list any attached documents] for your reference. Please contact me if additional information is needed.
+I've included [list: copies of vet records, itemized invoice, etc.] with this letter. Please let me know if you need anything else.
 
 Sincerely,
+
 [Policyholder Name]
 [Phone / Email]
 
