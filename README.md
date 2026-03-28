@@ -1,11 +1,33 @@
-# metlife-pet-insurance
+# MetLife Pet Insurance Plugin for Claude Code
 
-A [Claude Code plugin](https://github.com/anthropics/claude-plugins-official) for interacting with the MetLife Pet Insurance claims API and drafting formal claim appeals.
+A [Claude Code plugin](https://github.com/anthropics/claude-plugins-official) that lets you query the MetLife Pet Insurance claims API and build evidence-based appeals for denied or underpaid claims.
 
-## Features
+## What It Does
 
-- **`/metlife-pets`** — Query claims, download EOBs, fetch policy documents
-- **`/appeal-claim`** — Automated appeal workflow: gathers all evidence, analyzes denial reasons against your policy, and drafts a formal appeal letter
+### `/metlife-pets` - API Access
+Query your MetLife pet insurance account directly from Claude:
+- List all claims for a pet/policy
+- Get detailed claim information
+- List and download EOB documents
+- Download your full policy packet
+
+### `/appeal-claim` - Adversarial Claim Appeal
+A rigorous appeal workflow that does real underwriting analysis before writing anything. It will **refuse to draft a losing appeal** and tell you honestly when a denial is correct.
+
+**How it works:**
+
+1. Fetches your claim details, EOBs, claims history, and policy packet
+2. Reads every document and extracts denial reasons, amounts, dates
+3. Cross-references the denial against your actual policy terms
+4. Runs a **3-agent adversarial simulation**:
+   - **Policyholder Advocate** builds the strongest case for appeal
+   - **MetLife Claims Reviewer** defends the denial using policy language
+   - **Independent Judge** evaluates both sides neutrally
+5. Only drafts a letter if the case survives adversarial review
+6. Produces a plain-English appeal letter (not AI-sounding, not legalistic)
+7. Includes submission instructions, deadlines, and recommended attachments
+
+The appeal letter follows MetLife's required format: your name, pet's name, claim identification, and explanation with supporting evidence. It cites specific policy sections and does the reimbursement math.
 
 ## Installation
 
@@ -18,41 +40,52 @@ claude plugin add GraysonCAdams/claude-metlife
 You need a bearer token from your authenticated mypets.metlife.com session:
 
 1. Log in to [mypets.metlife.com](https://mypets.metlife.com)
-2. Open browser DevTools → Network tab
-3. Copy the `authorization: Bearer ...` header from any API request
-4. Set it in your shell:
+2. Open browser DevTools (F12) and go to the Network tab
+3. Click around in the app, then find any API request to `api.metlife.com`
+4. Copy the value from the `authorization: Bearer ...` header
+5. Set it in your environment:
 
 ```bash
 export METLIFE_BEARER_TOKEN="<your token>"
 ```
 
-> Tokens expire periodically. If you get 401 errors, grab a fresh one.
+Tokens expire periodically. If you get 401 errors, grab a fresh one.
 
 ## Usage
 
-### Query the API
-
 ```
-/metlife-pets list claims for policy 3508770 pet 1536515
-/metlife-pets get claim 3357541 for pet 1
-/metlife-pets list documents for claim 3357541 policy 3508770 pet 1536515
-/metlife-pets get policy packet for policy 3508770
+# List all claims
+/metlife-pets list claims for policy <policyId> pet <petId>
+
+# Get a specific claim
+/metlife-pets get claim <claimId> for pet <petId>
+
+# List documents for a claim
+/metlife-pets list documents for claim <claimId> policy <policyId> pet <petId>
+
+# Download your policy
+/metlife-pets get policy packet for policy <policyId>
+
+# Appeal a denied claim (runs full adversarial analysis)
+/appeal-claim policy <policyId> pet <petId> claim <claimId>
 ```
 
-### Appeal a Denied Claim
+## How the Appeal Process Works
 
-```
-/appeal-claim policy 3508770 pet 1536515 claim 3357541
-```
+Per MetLife policy (PET21-01-V):
 
-The appeal skill will:
-1. Fetch claim details, claims history, all EOB documents, and your policy packet
-2. Read and analyze every document
-3. Identify the denial/underpayment basis from the EOB
-4. Cross-reference against your actual policy terms
-5. Draft a formal appeal letter citing specific policy sections
-6. Flag the 90-day appeal deadline and recommend attachments
+- You have **90 days** from the claim decision to submit a written appeal
+- MetLife acknowledges receipt within **5 business days**
+- Final decision within **45 days** (extendable if they need more info)
+- If denied on first appeal, you can request an **external review within 30 days** by an independent veterinarian
+- External review decision comes within **10 days**
+
+The plugin knows all of this and will flag deadlines for you.
 
 ## No Secrets
 
-This repo contains no tokens, credentials, or personal data. The bearer token is read from the `METLIFE_BEARER_TOKEN` environment variable at runtime.
+This repo contains no tokens, credentials, or personal data. The bearer token is read from the `METLIFE_BEARER_TOKEN` environment variable at runtime. Source curl captures with tokens are gitignored.
+
+## License
+
+MIT
