@@ -298,19 +298,38 @@ Sincerely,
 
 **How to Submit Your Appeal:**
 
-1. **Find the submission address** on your claim form or EOB. The policy states the appeal must be sent to "the address indicated on the claim form."
-2. **Submit in Writing** — per policy, "Written" means paper or electronic media acceptable to MetLife. Options:
-   - **Mail** to the address on the claim form
-   - **Call 866-937-7387** to confirm electronic submission options
-3. **Include with your letter:**
-   - The appeal letter itself (all 4 required elements: your name, pet name, claim ID, explanation)
+MetLife accepts appeals via four methods:
+
+| Method | Details |
+|--------|---------|
+| **Email** | Pet_Submit_Claim@metlife.com |
+| **Mail** | MetLife Pet Insurance, Claims Department, 400 Missouri Avenue Suite 105, Jeffersonville, IN 47130 |
+| **Fax** | 877-281-3348 |
+| **Upload** | MyPets Mobile App or mypets.metlife.com |
+
+**For email submission:**
+1. Generate the Claim Appeal Form PDF using `generate-appeal-form.py` in the repo root:
+   - Create a JSON data file with form fields (see `appeal-data-3342951.json` as an example)
+   - Run: `python3 generate-appeal-form.py --fill data.json -o appeal-form-CLAIMID.pdf`
+   - A blank template is also available: `python3 generate-appeal-form.py -o appeal-form-blank.pdf`
+2. The form must be **printed, signed by the policyholder AND the treating veterinarian**, and scanned back to PDF.
+3. Email to **Pet_Submit_Claim@metlife.com** with subject line: "Claim Appeal - Policy [number] - Claim #[claimId]"
+4. Attach: the signed appeal form (scanned PDF), the appeal letter, itemized invoices, vet records, and any supporting documentation.
+
+**General instructions:**
+1. The appeal form requires the treating veterinarian's signature and clinic stamp. The user must bring the form to their vet.
+2. **Include with the submission:**
+   - The completed and signed Claim Appeal Form
+   - The appeal letter (all 4 required elements: your name, pet name, claim ID, explanation)
    - Copies of relevant vet records and itemized invoices
-   - Any additional supporting documents referenced in your letter
-4. **Keep copies** of everything you send.
-5. **Expect acknowledgment** within 5 business days of receipt.
-6. **Expect a decision** within 45 days (may be extended if they request more info — you'll have 45 days to respond).
-7. **If denied again**, you have **30 days** from the appeal decision to request an **external review** by an independent veterinarian. MetLife will provide the external review decision within 10 days.
-8. **To file a complaint** with MetLife directly: Metropolitan General Insurance Company, 700 Quaker Lane, Warwick, RI 02886. You may also contact your state's Department of Insurance.
+   - Any additional supporting documents referenced in the letter
+3. **Keep copies** of everything sent.
+4. **Expect acknowledgment** within 5 business days of receipt.
+5. **Expect a decision** within 45 days (may be extended if they request more info — you'll have 45 days to respond).
+6. **If denied again**, you have **30 days** from the appeal decision to request an **external review** by an independent veterinarian. MetLife will provide the external review decision within 10 days.
+7. **To file a complaint** with MetLife directly: Metropolitan General Insurance Company, 700 Quaker Lane, Warwick, RI 02886. You may also contact your state's Department of Insurance.
+
+**Veterinarian details (from prior appeals):** Pets First Veterinary Clinic, 3413 N. Broadway St., Chicago, IL 60657, (773) 904-8724, Dr. Patrick Mitchell DVM.
 
 ---
 

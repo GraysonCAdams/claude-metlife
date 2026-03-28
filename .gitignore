@@ -19,4 +19,13 @@ desktop-skills/
 
 # OS
 .DS_Store
+
+# PDFs (except blank form template)
 *.pdf
+!appeal-form-blank.pdf
+
+# Filled appeal forms and letters (contain PII)
+appeal-form-[0-9]*.pdf
+appeal-form-[0-9]*.md
+appeal-claim-[0-9]*.md
+appeal-data-[0-9]*.json
