@@ -82,8 +82,8 @@ metlife_login() {
     -H 'cache-control: no-cache, no-store' \
     --data-raw "$body" 2>/dev/null)
 
-  local flow_id corr_id status
-  read -r flow_id corr_id status < <(echo "$r1" | python3 -c "
+  local flow_id corr_id login_status
+  read -r flow_id corr_id login_status < <(echo "$r1" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 print(d.get('id',''), d.get('extension',{}).get('correlationId',''), d.get('status',''))
@@ -93,7 +93,7 @@ print(d.get('id',''), d.get('extension',{}).get('correlationId',''), d.get('stat
     echo "ERROR: Login failed. Response: $r1" >&2
     return 1
   fi
-  echo "Login step 1 OK (status: $status). Completing auth..." >&2
+  echo "Login step 1 OK (status: $login_status). Completing auth..." >&2
 
   # Brief pause — server needs a moment after device profile check
   sleep 2
@@ -115,18 +115,66 @@ print(d.get('id',''), d.get('extension',{}).get('correlationId',''), d.get('stat
     -H 'cache-control: no-cache, no-store' \
     --data-raw "$body2" 2>/dev/null)
 
-  local auth_status
-  auth_status=$(echo "$r2" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null)
-  if [ "$auth_status" != "COMPLETED" ]; then
-    echo "ERROR: Auth failed (status: $auth_status). Response: $r2" >&2
+  local auth_step2_status
+  auth_step2_status=$(echo "$r2" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null)
+
+  # Handle MFA: DEVICE_SELECTION_REQUIRED means we need to send an OTP
+  if [ "$auth_step2_status" = "DEVICE_SELECTION_REQUIRED" ]; then
+    local device_id corr_id2
+    device_id=$(echo "$r2" | python3 -c "import sys,json; print(json.load(sys.stdin)['devices'][0]['id'])" 2>/dev/null)
+    corr_id2=$(echo "$r2" | python3 -c "import sys,json; print(json.load(sys.stdin).get('extension',{}).get('correlationId',''))" 2>/dev/null)
+    local device_target
+    device_target=$(echo "$r2" | python3 -c "import sys,json; print(json.load(sys.stdin)['devices'][0].get('target',''))" 2>/dev/null)
+    echo "MFA required. Sending verification code to $device_target..." >&2
+
+    # Step 2b: POST /authentication/deliverOtpToDevice
+    local body_otp_send
+    body_otp_send=$(python3 -c "import json,sys; print(json.dumps({'deviceId':sys.argv[1],'flowId':sys.argv[2],'extension':{'correlationId':sys.argv[3]}}))" "$device_id" "$flow_id" "$corr_id2")
+
+    local r_otp_send
+    r_otp_send=$(curl -s "$APIM_BASE/authentication/deliverOtpToDevice" \
+      -H 'content-type: application/json' \
+      -H "channel-id: $CHANNEL_ID" \
+      -H 'is-ping-token: true' \
+      -H "ocp-apim-subscription-key: $APIM_KEY" \
+      -H "origin: $ORIGIN" -H "referer: $REFERER" \
+      -H "session-id: $METLIFE_SESSION_ID" \
+      -H "transaction-id: $METLIFE_SESSION_ID" \
+      -H "x-app-version: $APP_VERSION" \
+      -H 'cache-control: no-cache, no-store' \
+      --data-raw "$body_otp_send" 2>/dev/null)
+
+    local otp_send_status
+    otp_send_status=$(echo "$r_otp_send" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null)
+    if [ "$otp_send_status" != "OTP_REQUIRED" ]; then
+      echo "ERROR: Failed to send OTP (status: $otp_send_status). Response: $r_otp_send" >&2
+      return 1
+    fi
+
+    # Save MFA state for metlife_verify_otp to use
+    mkdir -p "$METLIFE_CACHE_DIR"
+    printf '%s\n%s\n%s\n' "$flow_id" "$cv" "$METLIFE_SESSION_ID" > "$METLIFE_CACHE_DIR/.mfa_state"
+    echo "MFA_OTP_SENT"
+    return 2
+  fi
+
+  if [ "$auth_step2_status" != "COMPLETED" ]; then
+    echo "ERROR: Auth failed (status: $auth_step2_status). Response: $r2" >&2
     return 1
   fi
 
-  # Extract tokens
+  _extract_tokens "$r2"
+}
+
+# Extract and save tokens from a COMPLETED auth response
+_extract_tokens() {
+  local response="$1"
   local now; now=$(date +%s)
-  read -r METLIFE_BEARER_TOKEN METLIFE_REFRESH_TOKEN expires_in < <(echo "$r2" | python3 -c "
+  local expires_in
+  read -r METLIFE_BEARER_TOKEN METLIFE_REFRESH_TOKEN expires_in < <(echo "$response" | python3 -c "
 import sys,json
-t=json.load(sys.stdin)['tokenResponse']
+d=json.load(sys.stdin)
+t=d.get('tokenResponse',d)
 print(t['access_token'], t['refresh_token'], t['expires_in'])
 " 2>/dev/null)
   METLIFE_TOKEN_EXPIRY=$((now + expires_in))
@@ -137,6 +185,54 @@ print(t['access_token'], t['refresh_token'], t['expires_in'])
 
   save_tokens
   echo "Login successful. Token expires in ${expires_in}s (~$((expires_in/60))m)." >&2
+}
+
+# ── MFA OTP Verification ────────────────────────────────────────────────────
+# Usage: metlife_verify_otp "123456"
+# Call after metlife_login returns MFA_OTP_SENT (exit code 2).
+
+metlife_verify_otp() {
+  local otp="$1"
+  [ -z "$otp" ] && { echo "ERROR: OTP code required" >&2; return 1; }
+
+  local mfa_state="$METLIFE_CACHE_DIR/.mfa_state"
+  [ ! -f "$mfa_state" ] && { echo "ERROR: No MFA state found. Run metlife_login first." >&2; return 1; }
+
+  local flow_id cv session_id
+  flow_id=$(sed -n '1p' "$mfa_state")
+  cv=$(sed -n '2p' "$mfa_state")
+  session_id=$(sed -n '3p' "$mfa_state")
+  METLIFE_SESSION_ID="$session_id"
+
+  echo "Verifying OTP..." >&2
+  local body_verify
+  body_verify=$(python3 -c "import json,sys; print(json.dumps({'otp':sys.argv[1],'flowId':sys.argv[2],'codeVerifier':sys.argv[3],'extension':{'correlationId':''}}))" "$otp" "$flow_id" "$cv")
+
+  local r_verify
+  r_verify=$(curl -s "$APIM_BASE/authentication/VerifyOtp" \
+    -H 'content-type: application/json' \
+    -H "channel-id: $CHANNEL_ID" \
+    -H 'is-ping-token: true' \
+    -H "ocp-apim-subscription-key: $APIM_KEY" \
+    -H "origin: $ORIGIN" -H "referer: $REFERER" \
+    -H "session-id: $METLIFE_SESSION_ID" \
+    -H "transaction-id: $METLIFE_SESSION_ID" \
+    -H "x-app-version: $APP_VERSION" \
+    -H 'cache-control: no-cache, no-store' \
+    --data-raw "$body_verify" 2>/dev/null)
+
+  # Check for error
+  local verify_error
+  verify_error=$(echo "$r_verify" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','') or d.get('title',''))" 2>/dev/null)
+  if echo "$verify_error" | grep -qi "error\|validation\|400\|invalid"; then
+    echo "ERROR: OTP verification failed. Response: $r_verify" >&2
+    return 1
+  fi
+
+  # Clean up MFA state
+  rm -f "$mfa_state"
+
+  _extract_tokens "$r_verify"
 }
 
 # ── Token refresh ────────────────────────────────────────────────────────────

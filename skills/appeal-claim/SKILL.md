@@ -57,7 +57,7 @@ if [ "$AUTH_RESULT" = "AUTH_NEEDED" ]; then
 fi
 ```
 
-If `AUTH_NEEDED` is returned, ask the user for their MetLife email and password and call `metlife_login "email" "password"`. See the `metlife-pets` skill for full API documentation.
+If `AUTH_NEEDED` is returned, ask the user for their MetLife email and password and call `metlife_login "email" "password"`. If login returns `MFA_OTP_SENT`, ask the user for the email verification code and call `metlife_verify_otp "123456"`. See the `metlife-pets` skill for full API documentation.
 
 Use `metlife_ibm` for claims/documents/policy endpoints and `metlife_apim` for pets/policies list. Always validate responses with `is_cacheable` before writing to cache.
 
@@ -76,11 +76,12 @@ Ask the user for `policyId`, `petId`, and `claimId` if not provided.
 - If a claim covers multiple pets (check the `petIds` array in the response), fetch for each pet.
 - Cache the response to `.metlife-cache/claims/{policyId}_{petId}_all.json`
 
-#### 1b. Fetch details and documents for EVERY claim
+#### 1b. Fetch details, incidents, and documents for EVERY claim
 For **every claim in the claims history** (not just the target claim):
-1. Fetch claim details using `metlife_ibm "$IBM_BASE/cl/v1/claim/{claimSourceId}/{claimId}"`
-2. Fetch the document list for each claim
-3. Download **every document** from every claim — this includes:
+1. Fetch claim incidents: `metlife_ibm "$IBM_BASE/cl/v1/incident/{claimSourceId}/{claimId}/incidents"` — this returns per-pet/per-condition breakdowns with amounts claimed, approved, and paid, plus denial descriptions (e.g., "Pre-ex Yr 4")
+2. For each incident, fetch line items: `metlife_ibm "$IBM_BASE/cl/v1/incident/{incidentId}/lineItems"` — this returns individual charges, denial reason codes (`exceptionType`), and the full customer-facing denial message (`exceptionCustomerMessage`)
+3. Fetch the document list for each claim
+4. Download **every document** from every claim — this includes:
    - **EOBs** (Explanation of Benefits) — contains denial reasons, line items, amounts
    - **Invoices** — itemized vet bills showing procedures and costs
    - **SOAP notes** — veterinary medical records documenting diagnosis, treatment, and clinical findings

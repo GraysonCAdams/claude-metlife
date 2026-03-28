@@ -11,7 +11,8 @@ You are a helper for interacting with the MetLife Pet Insurance API.
 ## Authentication
 
 Authentication is handled by `metlife.sh` in the repo root. It supports:
-- **Programmatic login** with username/password (2-step: login + profileDevice)
+- **Programmatic login** with username/password (2-step: login + profileDevice, with MFA support)
+- **MFA handling** via email OTP (deliverOtpToDevice + VerifyOtp)
 - **Automatic token refresh** using the refresh token (~15 min access token TTL)
 - **Token persistence** across shell sessions via `.metlife-cache/.token`
 - **Proactive refresh** before token expiry (120s buffer)
@@ -25,10 +26,18 @@ If `ensure_auth` returns `AUTH_NEEDED`, ask the user for their MetLife login cre
 Then call:
 ```bash
 source metlife.sh
-metlife_login "user@email.com" "their_password"
+LOGIN_RESULT=$(metlife_login "user@email.com" "their_password")
 ```
 
-The login function handles the full OAuth flow (PKCE, device profiling). Tokens are saved automatically.
+**If login returns `MFA_OTP_SENT` (exit code 2):** MetLife requires email verification. Ask the user to check their email for a verification code, then call:
+```bash
+source metlife.sh
+metlife_verify_otp "123456"
+```
+
+**If login completes without MFA:** Tokens are saved automatically.
+
+**Important (zsh compatibility):** Always run metlife.sh with `bash` or ensure the calling shell is bash. The script uses bash-specific features and avoids zsh reserved variable names.
 
 ### Every Bash call
 
@@ -67,12 +76,13 @@ Use `metlife_ibm` for these endpoints:
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET $IBM_BASE/cl/v1/claim/all?petId={petId}&policyId={policyId}` | List all claims |
-| `GET $IBM_BASE/cl/v1/claim/{claimSourceId}/{claimId}` | Claim details (`claimSourceId` is typically `1`, NOT petId) |
-| `GET $IBM_BASE/cl/v1/document-details?policyId={policyId}&claimId={claimId}&petId={petId}` | List claim documents |
+| `GET $IBM_BASE/cl/v1/claim/all?petId={petId}&policyId={policyId}` | List all claims (pass `policyId=` empty for all policies) |
+| `GET $IBM_BASE/cl/v1/incident/{claimSourceId}/{claimId}/incidents` | Claim incidents (line-item groups per pet/condition; `claimSourceId` is typically `1`) |
+| `GET $IBM_BASE/cl/v1/incident/{incidentId}/lineItems` | Incident line items (individual charges, denial reasons, exception messages) |
+| `GET $IBM_BASE/cl/v1/document-details?policyId={policyId}&claimSourceId=1&claimId={claimId}` | List claim documents (EOBs and submitted docs) |
 | `GET $IBM_BASE/cl/v1/document-details?..&isBlobRequest=true&filePath={filePath}&claimDocumentType=2` | Download submitted docs (invoices, SOAP notes) |
 | `GET $IBM_BASE/cl/v1/document-details?..&isBlobRequest=true&filePath={filePath}&claimDocumentType=1` | Download EOB |
-| `GET $IBM_BASE/p/v1/policy/{policyId}/policyPacket` | Policy packet PDF |
+| `GET $IBM_BASE/p/v1/policy/{policyId}/policyPacket` | Policy packet PDF (binary response, save directly) |
 | `GET $IBM_BASE/cu/v1/customer/details` | Customer profile |
 
 You can also use `metlife_api` which auto-routes to the correct gateway based on the URL.
