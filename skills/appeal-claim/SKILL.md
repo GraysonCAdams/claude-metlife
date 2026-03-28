@@ -123,26 +123,74 @@ Identify the strongest argument(s) by analyzing the gap between the denial reaso
 | **Waiting period satisfied** | Condition first presented after all applicable waiting periods elapsed |
 | **Continuation of covered condition** | A previously approved condition was suddenly excluded on a follow-up claim |
 
-### Step 5b: Honest Assessment — DO NOT SKIP
+### Step 5b: Adversarial Simulation — DO NOT SKIP
 
 **This step is mandatory. You must complete it before deciding whether to draft a letter.**
 
-After cross-referencing the denial against the policy, make an honest determination. Rate the appeal strength as one of:
+After Steps 3-5, you have the denial details, the policy language, and candidate arguments. Now you must stress-test the case by running an adversarial simulation using three background agents. Launch all three in parallel using the Agent tool.
 
-- **Strong**: The denial clearly contradicts the policy language. Specific policy sections support coverage, and the exclusion cited either doesn't apply or was misread. Worth pursuing.
-- **Moderate**: There's a reasonable argument, but it depends on interpretation of the policy language or facts that aren't fully clear from the documents. Worth pursuing, but be upfront about the weak spots.
-- **Weak**: The policy language is ambiguous or only partially supports the appeal. The denial might be technically correct but the application feels harsh. Mention this to the user and let them decide.
-- **Not viable**: The denial is consistent with the policy terms. The exclusion applies, or the condition is legitimately pre-existing, or the treatment isn't covered. **Do not draft an appeal letter.** Instead, explain clearly why the denial is correct and what policy language supports it.
+**Prepare a briefing document** before launching agents. Write it to a temp file (e.g., `appeal-briefing-{claimId}.tmp.md`) containing:
+- The denial reason (exact text from EOB)
+- The candidate appeal arguments from Step 5
+- All relevant policy sections (quoted verbatim with section names/page numbers)
+- Key dates: policy effective date, waiting period end, date of service, date of first symptoms
+- Dollar amounts: billed, allowed, paid, member responsibility
+- Any other facts from the claim data and vet records
+
+Then launch these three agents **in parallel**, each given the briefing file to read:
+
+---
+
+**Agent 1: Policyholder Advocate**
+
+```
+You represent the policyholder appealing a denied pet insurance claim. Read the briefing file at [path]. Your job is to build the strongest possible case for why the denial is wrong. Argue from the policy language. Find every angle. Be specific, cite sections, quote the policy. If an argument is weak, say so, but still present it. Write your argument as a structured brief with each point numbered. End with your honest confidence level (0-100%) that this appeal would succeed.
+```
+
+**Agent 2: MetLife Claims Reviewer**
+
+```
+You are a MetLife pet insurance claims reviewer defending the denial of a claim. Read the briefing file at [path]. Your job is to argue why the denial is correct and should be upheld on appeal. Use the policy language to support the denial. Anticipate every argument the policyholder might make and explain why each one fails. Be thorough. Look for pre-existing condition evidence, exclusion applicability, waiting period issues, and any policy language that supports the original decision. If you find any argument from the policyholder that you genuinely cannot counter, admit it. Write your defense as a structured brief with each point numbered. End with your honest confidence level (0-100%) that MetLife would successfully defend this denial.
+```
+
+**Agent 3: Independent Review Judge**
+
+```
+You are a neutral insurance dispute mediator evaluating a pet insurance claim appeal. Read the briefing file at [path]. Your job is to evaluate the case from both sides without bias. For each potential argument, assess: (a) does the policy language clearly support the policyholder or the insurer? (b) is the language ambiguous? (c) what would a reasonable reading conclude? Consider regulatory norms: in insurance disputes, ambiguous policy language is typically construed in favor of the insured. Write your assessment as a structured evaluation of each argument. End with:
+- Overall ruling: "Appeal should succeed" / "Appeal should fail" / "Could go either way"
+- Confidence: 0-100%
+- Key vulnerability for each side (what could sink their case)
+```
+
+---
+
+**After all three agents return**, synthesize their findings:
+
+1. Read all three briefs carefully.
+2. Identify where the Advocate and Reviewer agree (these are settled points, don't waste time on them).
+3. Focus on where they disagree. The Judge's assessment of these disputed points is the tiebreaker.
+4. Note any argument the MetLife Reviewer could not counter (these are your strongest appeal points).
+5. Note any argument the Advocate admitted was weak (drop these or deprioritize them).
+
+**Then make the final determination.** Rate the appeal as:
+
+- **Strong**: The Advocate wins on the core arguments, the Reviewer has no strong counter, and the Judge sides with the policyholder. Proceed to draft.
+- **Moderate**: The Advocate has solid arguments on some points but the Reviewer lands real hits on others. The Judge says it could go either way or leans policyholder. Proceed to draft, but be transparent about vulnerabilities.
+- **Weak**: The Reviewer's defense is mostly sound but there's one angle worth trying. Tell the user honestly: "This is a long shot. Here's the one argument that has some merit, and here's what MetLife will say back."
+- **Not viable**: The Reviewer wins. The policy supports the denial. The Judge agrees. **Do not draft an appeal letter.**
 
 **When the assessment is Weak or Not viable, you must:**
-1. Tell the user directly: "I don't think this appeal is worth pursuing. Here's why."
-2. Explain which policy sections support the denial.
-3. If there's any angle at all (even a long shot), mention it, but be clear about the odds.
-4. Do NOT draft an appeal letter just because the user asked you to. Wasting the user's time on a losing appeal is worse than being honest now.
-5. If the user insists after your explanation, you can draft one, but include a disclaimer to the user (not in the letter) about what you think the outcome will be.
+1. Tell the user directly: "I ran this through adversarial review and I don't think this appeal will succeed. Here's why."
+2. Show the user the key points from the MetLife Reviewer's brief that are hard to counter.
+3. Quote the specific policy language that works against them.
+4. If there's any angle at all (even a long shot), mention it, but be honest about the odds.
+5. Do NOT draft an appeal letter just because the user asked. A losing appeal wastes their time and the 90-day window. Being honest now is more valuable.
+6. If the user still insists after seeing the analysis, you can draft one, but include a private disclaimer (not in the letter) about expected outcome and which arguments MetLife will use to deny it again.
 
 **When the assessment is Strong or Moderate:**
-Proceed to Step 6. In the findings summary (Step 7), still be transparent about any weaknesses in the argument.
+Proceed to Step 6. Incorporate the strongest arguments identified by the simulation. Avoid or minimize arguments the MetLife Reviewer successfully countered. In the findings summary (Step 7), include the key vulnerabilities identified by the Judge.
+
+Clean up the temp briefing file after the simulation completes.
 
 ### Step 6: Draft the Appeal Letter (only if assessment is Strong or Moderate)
 
