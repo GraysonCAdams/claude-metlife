@@ -1,0 +1,8 @@
+{
+  "name": "metlife-pet-insurance",
+  "description": "Query MetLife Pet Insurance claims API, download EOBs and policy documents, and draft formal claim appeals",
+  "author": {
+    "name": "Grayson Adams",
+    "email": "gadams@harrisassoc.com"
+  }
+}
