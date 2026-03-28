@@ -1,0 +1,20 @@
+{
+  "name": "metlife-pet-insurance",
+  "description": "Claude Code plugin for MetLife Pet Insurance claims API and adversarial claim appeals",
+  "owner": {
+    "name": "Grayson Adams",
+    "email": "gadams@harrisassoc.com"
+  },
+  "plugins": [
+    {
+      "name": "metlife-pet-insurance",
+      "description": "Query MetLife Pet Insurance claims API, download EOBs and policy documents, and draft formal claim appeals with adversarial review",
+      "author": {
+        "name": "Grayson Adams",
+        "email": "gadams@harrisassoc.com"
+      },
+      "source": ".",
+      "category": "productivity"
+    }
+  ]
+}
