@@ -98,14 +98,123 @@ All API responses and downloaded documents are cached in `.metlife-cache/` in th
 5. To force a refresh, the user can say "refresh" or "re-fetch" and you should bypass the cache for that request and overwrite the cached file.
 6. **Create the directories** as needed using `mkdir -p`.
 
+## Token Refresh
+
+The bearer token expires quickly (minutes). Use the refresh token mechanism to keep the session alive automatically.
+
+**Environment variables:**
+- `METLIFE_BEARER_TOKEN` — the current access token (set by user initially, then auto-refreshed)
+- `METLIFE_REFRESH_TOKEN` — the refresh token (set by user initially)
+
+### Refresh endpoint
+```
+POST https://apis.metlife.com/external/pet-services/authentication/v2/refreshToken_v2
+```
+
+### Refresh headers
+```
+accept: */*
+cache-control: no-cache, no-store
+channel-id: PetMobile
+content-type: application/json
+is-ping-token: true
+ocp-apim-subscription-key: 979fd0c2ea204f1095d7faa8154c39b0
+origin: https://mypets.metlife.com
+referer: https://mypets.metlife.com/
+x-app-version: 4.5.1
+```
+
+### Refresh body
+Send the refresh token as a JSON string (quoted):
+```bash
+curl -s 'https://apis.metlife.com/external/pet-services/authentication/v2/refreshToken_v2' \
+  -H 'accept: */*' \
+  -H 'cache-control: no-cache, no-store' \
+  -H 'channel-id: PetMobile' \
+  -H 'content-type: application/json' \
+  -H 'is-ping-token: true' \
+  -H 'ocp-apim-subscription-key: 979fd0c2ea204f1095d7faa8154c39b0' \
+  -H 'origin: https://mypets.metlife.com' \
+  -H 'referer: https://mypets.metlife.com/' \
+  -H 'x-app-version: 4.5.1' \
+  --data-raw "\"$METLIFE_REFRESH_TOKEN\""
+```
+
+The response contains a new `access_token`. Extract it and update the env var:
+```bash
+NEW_TOKEN=$(curl -s '...' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+export METLIFE_BEARER_TOKEN="$NEW_TOKEN"
+```
+
+### Auto-refresh on 401
+**Before starting any multi-step operation** (like a full sync), proactively refresh the token to avoid mid-operation expiry. When any API call returns a 401 response (`"Token is not active"` or `"Unauthorized"`):
+1. Call the refresh endpoint to get a new access token
+2. Update `METLIFE_BEARER_TOKEN` with the new token
+3. Retry the failed request
+4. If refresh also fails, tell the user to provide fresh tokens
+
+### Helper script
+At the start of any session that will make API calls, create a helper script at `.metlife-cache/refresh.sh` that other commands can source:
+```bash
+#!/bin/bash
+refresh_token() {
+  local NEW_TOKEN
+  NEW_TOKEN=$(curl -s 'https://apis.metlife.com/external/pet-services/authentication/v2/refreshToken_v2' \
+    -H 'accept: */*' \
+    -H 'cache-control: no-cache, no-store' \
+    -H 'channel-id: PetMobile' \
+    -H 'content-type: application/json' \
+    -H 'is-ping-token: true' \
+    -H 'ocp-apim-subscription-key: 979fd0c2ea204f1095d7faa8154c39b0' \
+    -H 'origin: https://mypets.metlife.com' \
+    -H 'referer: https://mypets.metlife.com/' \
+    -H 'x-app-version: 4.5.1' \
+    --data-raw "\"$METLIFE_REFRESH_TOKEN\"" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)
+  if [ -n "$NEW_TOKEN" ] && [ "$NEW_TOKEN" != "None" ]; then
+    export METLIFE_BEARER_TOKEN="$NEW_TOKEN"
+    echo "Token refreshed successfully"
+    return 0
+  else
+    echo "Token refresh failed"
+    return 1
+  fi
+}
+
+metlife_api() {
+  local RESPONSE
+  RESPONSE=$(curl -s "$@" \
+    -H 'accept: */*' \
+    -H "authorization: Bearer $METLIFE_BEARER_TOKEN" \
+    -H 'cache-control: no-cache, no-store' \
+    -H 'origin: https://mypets.metlife.com' \
+    -H 'referer: https://mypets.metlife.com/' \
+    -H 'x-app-version: 4.5.1' \
+    -H 'x-ibm-client-id: 634dc387-c737-4a6a-86ef-f49056e30898')
+  if echo "$RESPONSE" | grep -q '"401"\|"Unauthorized"\|"Token is not active"'; then
+    refresh_token && RESPONSE=$(curl -s "$@" \
+      -H 'accept: */*' \
+      -H "authorization: Bearer $METLIFE_BEARER_TOKEN" \
+      -H 'cache-control: no-cache, no-store' \
+      -H 'origin: https://mypets.metlife.com' \
+      -H 'referer: https://mypets.metlife.com/' \
+      -H 'x-app-version: 4.5.1' \
+      -H 'x-ibm-client-id: 634dc387-c737-4a6a-86ef-f49056e30898')
+  fi
+  echo "$RESPONSE"
+}
+```
+
 ## Instructions
 
-1. **Always check** that `METLIFE_BEARER_TOKEN` is set before making requests. If not set, tell the user: `export METLIFE_BEARER_TOKEN="<token from mypets.metlife.com DevTools>"`
-2. **Check cache first** before making any API call. Read from `.metlife-cache/` if the file exists.
-3. **Use curl** via the Bash tool to make API calls with all required headers. Cache every response.
-4. **Parse JSON responses** and present data in a readable format (tables, summaries).
-5. **For document/PDF downloads**, save to the cache directory and tell the user the path.
-6. If a request returns 401, tell the user their token has expired and they need a new one from the mypets.metlife.com browser session.
+1. **Always check** that `METLIFE_BEARER_TOKEN` and `METLIFE_REFRESH_TOKEN` are set before making requests. If not set, tell the user:
+   - `export METLIFE_BEARER_TOKEN="<token from mypets.metlife.com DevTools>"` (the `authorization` Bearer token from any API request)
+   - `export METLIFE_REFRESH_TOKEN="<refresh token>"` (from the refreshToken_v2 request body in DevTools)
+2. **Proactively refresh the token** before starting any multi-step operation (sync, appeal analysis, etc.) to minimize mid-operation failures.
+3. **Check cache first** before making any API call. Read from `.metlife-cache/` if the file exists.
+4. **Use curl** via the Bash tool to make API calls with all required headers. Cache every response.
+5. **Parse JSON responses** and present data in a readable format (tables, summaries).
+6. **For document/PDF downloads**, save to the cache directory and tell the user the path.
+7. **On 401 responses**, automatically refresh the token and retry. If refresh fails, tell the user their session has expired and they need to log in again at mypets.metlife.com and provide fresh tokens.
 
 ### curl template:
 ```bash
