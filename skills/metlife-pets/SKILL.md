@@ -98,73 +98,62 @@ All API responses and downloaded documents are cached in `.metlife-cache/` in th
 5. To force a refresh, the user can say "refresh" or "re-fetch" and you should bypass the cache for that request and overwrite the cached file.
 6. **Create the directories** as needed using `mkdir -p`.
 
-## Token Refresh
+## Token Management
 
-The bearer token expires quickly (minutes). Use the refresh token mechanism to keep the session alive automatically.
+The bearer token expires quickly (minutes). Tokens are stored in a **file** so they persist across shell sessions and tool invocations.
 
-**Environment variables:**
-- `METLIFE_BEARER_TOKEN` — the current access token (set by user initially, then auto-refreshed)
-- `METLIFE_REFRESH_TOKEN` — the refresh token (set by user initially)
+### Token file: `.metlife-cache/.token`
+This file stores the current bearer token and refresh token as two lines:
+```
+<bearer_token>
+<refresh_token>
+```
+The file is inside `.metlife-cache/` which is already gitignored, so secrets are never committed.
+
+### Setting tokens initially
+The user provides a bearer token by pasting a "Copy as cURL" from Chrome DevTools (right-click any `api.metlife.com` request in Network tab → Copy → Copy as cURL). Extract the Bearer token from the `-H 'authorization: Bearer ...'` header and optionally a refresh token if available.
+
+Write them to the token file:
+```bash
+mkdir -p .metlife-cache
+echo '<bearer_token>' > .metlife-cache/.token
+echo '<refresh_token>' >> .metlife-cache/.token
+```
+
+### Reading tokens
+**Every bash invocation** must read the token file at the start since env vars do not persist across separate Bash tool calls:
+```bash
+METLIFE_BEARER_TOKEN=$(sed -n '1p' .metlife-cache/.token 2>/dev/null)
+METLIFE_REFRESH_TOKEN=$(sed -n '2p' .metlife-cache/.token 2>/dev/null)
+```
 
 ### Refresh endpoint
 ```
 POST https://apis.metlife.com/external/pet-services/authentication/v2/refreshToken_v2
 ```
+**Required headers:** `session-id` and `transaction-id` (generate timestamp-based IDs), plus `channel-id: PetMobile`, `is-ping-token: true`, `ocp-apim-subscription-key: 979fd0c2ea204f1095d7faa8154c39b0`.
 
-### Refresh headers
-**Important:** The refresh endpoint requires `session-id` and `transaction-id` headers. Generate a timestamp-based ID.
-```
-accept: */*
-cache-control: no-cache, no-store
-channel-id: PetMobile
-content-type: application/json
-is-ping-token: true
-ocp-apim-subscription-key: 979fd0c2ea204f1095d7faa8154c39b0
-origin: https://mypets.metlife.com
-referer: https://mypets.metlife.com/
-session-id: {timestamp}cls
-transaction-id: {timestamp}cls
-x-app-version: 4.5.1
-```
+The response contains a new `access_token` and a new `refresh_token`. **Both must be written back** to `.metlife-cache/.token`.
 
-### Refresh body
-Send the refresh token as a JSON string (quoted):
-```bash
-SESSION_ID="$(date +%s%3N)cls"
-RESPONSE=$(curl -s 'https://apis.metlife.com/external/pet-services/authentication/v2/refreshToken_v2' \
-  -H 'accept: */*' \
-  -H 'cache-control: no-cache, no-store' \
-  -H 'channel-id: PetMobile' \
-  -H 'content-type: application/json' \
-  -H 'is-ping-token: true' \
-  -H 'ocp-apim-subscription-key: 979fd0c2ea204f1095d7faa8154c39b0' \
-  -H 'origin: https://mypets.metlife.com' \
-  -H 'referer: https://mypets.metlife.com/' \
-  -H "session-id: $SESSION_ID" \
-  -H "transaction-id: $SESSION_ID" \
-  -H 'x-app-version: 4.5.1' \
-  --data-raw "\"$METLIFE_REFRESH_TOKEN\"")
-```
+### Helper script: `.metlife-cache/metlife.sh`
+At the start of any session that will make API calls, create this helper script. **Source it** (`source .metlife-cache/metlife.sh`) at the top of every Bash tool invocation that needs API access.
 
-The response contains `access_token` and a new `refresh_token`. Update BOTH env vars:
-```bash
-export METLIFE_BEARER_TOKEN=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-NEW_REFRESH=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('refresh_token',''))" 2>/dev/null)
-[ -n "$NEW_REFRESH" ] && export METLIFE_REFRESH_TOKEN="$NEW_REFRESH"
-```
-
-### Auto-refresh on 401
-**Before starting any multi-step operation** (like a full sync), proactively refresh the token to avoid mid-operation expiry. When any API call returns a 401 response (`"Token is not active"` or `"Unauthorized"`):
-1. Call the refresh endpoint to get a new access token
-2. Update `METLIFE_BEARER_TOKEN` with the new token
-3. Retry the failed request
-4. If refresh also fails, tell the user to provide fresh tokens
-
-### Helper script
-At the start of any session that will make API calls, create a helper script at `.metlife-cache/refresh.sh` that other commands can source:
 ```bash
 #!/bin/bash
+TOKEN_FILE=".metlife-cache/.token"
+
+load_tokens() {
+  METLIFE_BEARER_TOKEN=$(sed -n '1p' "$TOKEN_FILE" 2>/dev/null)
+  METLIFE_REFRESH_TOKEN=$(sed -n '2p' "$TOKEN_FILE" 2>/dev/null)
+}
+
+save_tokens() {
+  echo "$METLIFE_BEARER_TOKEN" > "$TOKEN_FILE"
+  echo "$METLIFE_REFRESH_TOKEN" >> "$TOKEN_FILE"
+}
+
 refresh_token() {
+  load_tokens
   local SESSION_ID="$(date +%s%3N)cls"
   local RESPONSE
   RESPONSE=$(curl -s 'https://apis.metlife.com/external/pet-services/authentication/v2/refreshToken_v2' \
@@ -185,17 +174,19 @@ refresh_token() {
   local NEW_REFRESH
   NEW_REFRESH=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('refresh_token',''))" 2>/dev/null)
   if [ -n "$NEW_TOKEN" ] && [ "$NEW_TOKEN" != "None" ]; then
-    export METLIFE_BEARER_TOKEN="$NEW_TOKEN"
-    [ -n "$NEW_REFRESH" ] && export METLIFE_REFRESH_TOKEN="$NEW_REFRESH"
-    echo "Token refreshed successfully"
+    METLIFE_BEARER_TOKEN="$NEW_TOKEN"
+    [ -n "$NEW_REFRESH" ] && METLIFE_REFRESH_TOKEN="$NEW_REFRESH"
+    save_tokens
+    echo "Token refreshed successfully" >&2
     return 0
   else
-    echo "Token refresh failed"
+    echo "Token refresh failed" >&2
     return 1
   fi
 }
 
 metlife_api() {
+  load_tokens
   local RESPONSE
   RESPONSE=$(curl -s "$@" \
     -H 'accept: */*' \
@@ -217,31 +208,32 @@ metlife_api() {
   fi
   echo "$RESPONSE"
 }
+
+# Auto-load tokens on source
+load_tokens
 ```
+
+### Usage pattern
+Every Bash tool call that needs the API should start with:
+```bash
+cd /Users/grayson/Repos/claude-metlife
+source .metlife-cache/metlife.sh
+
+# Then use metlife_api instead of raw curl:
+metlife_api 'https://api.metlife.com/metlife/production/api/pet-services/pingv2/cl/v1/claim/all?petId=1536515&policyId=3508770'
+```
+The `metlife_api` function automatically reads the token from the file, adds all required headers, and auto-refreshes + retries on 401.
 
 ## Instructions
 
-1. **Always check** that `METLIFE_BEARER_TOKEN` and `METLIFE_REFRESH_TOKEN` are set before making requests. If not set, tell the user:
-   - `export METLIFE_BEARER_TOKEN="<token from mypets.metlife.com DevTools>"` (the `authorization` Bearer token from any API request)
-   - `export METLIFE_REFRESH_TOKEN="<refresh token>"` (from the refreshToken_v2 request body in DevTools)
-2. **Proactively refresh the token** before starting any multi-step operation (sync, appeal analysis, etc.) to minimize mid-operation failures.
-3. **Check cache first** before making any API call. Read from `.metlife-cache/` if the file exists.
-4. **Use curl** via the Bash tool to make API calls with all required headers. Cache every response.
-5. **Parse JSON responses** and present data in a readable format (tables, summaries).
-6. **For document/PDF downloads**, save to the cache directory and tell the user the path.
-7. **On 401 responses**, automatically refresh the token and retry. If refresh fails, tell the user their session has expired and they need to log in again at mypets.metlife.com and provide fresh tokens.
-
-### curl template:
-```bash
-curl -s 'https://api.metlife.com/metlife/production/api/pet-services/pingv2/cl/v1/{endpoint}' \
-  -H 'accept: */*' \
-  -H "authorization: Bearer $METLIFE_BEARER_TOKEN" \
-  -H 'cache-control: no-cache, no-store' \
-  -H 'origin: https://mypets.metlife.com' \
-  -H 'referer: https://mypets.metlife.com/' \
-  -H 'x-app-version: 4.5.1' \
-  -H 'x-ibm-client-id: 634dc387-c737-4a6a-86ef-f49056e30898'
-```
+1. **Check for `.metlife-cache/.token`** before making requests. If it doesn't exist or is empty, ask the user to right-click any `api.metlife.com` request in Chrome DevTools Network tab → "Copy as cURL" and paste it. Extract the Bearer token and save it to the token file. If they also have a refresh token, save that as the second line.
+2. **Always `source .metlife-cache/metlife.sh`** at the start of every Bash tool call that makes API requests. This loads tokens from the file and provides the `metlife_api` and `refresh_token` helper functions.
+3. **Proactively call `refresh_token`** before starting any multi-step operation (sync, appeal analysis, etc.) to minimize mid-operation failures.
+4. **Check cache first** before making any API call. Read from `.metlife-cache/` if the file exists.
+5. **Use `metlife_api`** instead of raw curl for all MetLife API calls. It handles auth headers and auto-refresh.
+6. **Parse JSON responses** and present data in a readable format (tables, summaries).
+7. **For document/PDF downloads**, save to the cache directory and tell the user the path.
+8. **If refresh fails**, tell the user their session has expired and they need to paste a fresh "Copy as cURL" from mypets.metlife.com.
 
 ## First-Run Sync
 
