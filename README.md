@@ -53,20 +53,25 @@ Tokens expire periodically. If you get 401 errors, grab a fresh one.
 
 ## Usage
 
+Once installed, just open a conversation and talk normally. No commands needed. Examples:
+
+- "Hey, can you check on my claims?"
+- "My claim for Peaches got denied, what happened?"
+- "Can you look into whether I should appeal this?"
+- "What does my policy cover for diagnostics?"
+- "Pull up the EOB for claim 3357541"
+
+The plugin understands the context and will ask for any IDs it needs (policy, pet, claim). It will walk you through everything conversationally.
+
+### Slash commands (optional)
+
+If you prefer explicit commands, these are also available:
+
 ```
-# List all claims
 /metlife-pets list claims for policy <policyId> pet <petId>
-
-# Get a specific claim
 /metlife-pets get claim <claimId> for pet <petId>
-
-# List documents for a claim
 /metlife-pets list documents for claim <claimId> policy <policyId> pet <petId>
-
-# Download your policy
 /metlife-pets get policy packet for policy <policyId>
-
-# Appeal a denied claim (runs full adversarial analysis)
 /appeal-claim policy <policyId> pet <petId> claim <claimId>
 ```
 
