@@ -1,0 +1,12 @@
+# Secret files
+.env
+*.env
+.env.*
+token.txt
+
+# Source curl captures (contain bearer tokens)
+*.txt
+!README.txt
+
+# OS
+.DS_Store
